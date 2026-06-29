@@ -1,0 +1,1544 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cartera · Sistema de Cartas · Cobros Venta Directa</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Dancing+Script:wght@600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#070B16; --ink-2:#0C1426; --ink-3:#111B30;
+  --teal:#2DD4BF; --sky:#38BDF8; --indigo:#6366F1; --violet:#A855F7;
+  --txt:#EAF0FF; --txt-2:#9FB0CC; --txt-3:#64748B;
+  --ok:#34D399; --warn:#FBBF24; --bad:#FB7185;
+  --glass:linear-gradient(160deg,rgba(255,255,255,.075),rgba(255,255,255,.022));
+  --glass-2:linear-gradient(160deg,rgba(255,255,255,.10),rgba(255,255,255,.03));
+  --stroke:rgba(255,255,255,.10);
+  --stroke-bright:rgba(255,255,255,.18);
+  --shadow:0 10px 40px rgba(0,0,0,.45);
+  --r:18px; --r-sm:12px;
+  --accent:linear-gradient(135deg,#2DD4BF,#38BDF8);
+  --accent-v:linear-gradient(135deg,#6366F1,#A855F7);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:'Inter',system-ui,sans-serif;
+  background:var(--ink); color:var(--txt);
+  overflow:hidden; -webkit-font-smoothing:antialiased;
+  font-feature-settings:"cv02","cv03","cv04","ss01";
+}
+/* ---------- aurora ambiental ---------- */
+.aurora{position:fixed;inset:0;z-index:0;overflow:hidden;pointer-events:none}
+.aurora::before,.aurora::after,.aurora i{
+  content:"";position:absolute;border-radius:50%;filter:blur(80px);opacity:.55;mix-blend-mode:screen;
+}
+.aurora::before{width:55vw;height:55vw;left:-10vw;top:-15vw;
+  background:radial-gradient(circle,var(--teal),transparent 65%);animation:drift1 26s ease-in-out infinite}
+.aurora::after{width:50vw;height:50vw;right:-12vw;top:10vh;
+  background:radial-gradient(circle,var(--indigo),transparent 62%);animation:drift2 32s ease-in-out infinite}
+.aurora i{width:45vw;height:45vw;left:25vw;bottom:-22vw;
+  background:radial-gradient(circle,var(--violet),transparent 60%);animation:drift3 38s ease-in-out infinite;opacity:.4}
+@keyframes drift1{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(8vw,6vh) scale(1.12)}}
+@keyframes drift2{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(-7vw,9vh) scale(1.08)}}
+@keyframes drift3{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(5vw,-7vh) scale(1.15)}}
+.grain{position:fixed;inset:0;z-index:1;pointer-events:none;opacity:.035;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+
+/* ---------- glass primitive ---------- */
+.glass{
+  background:var(--glass); backdrop-filter:blur(22px) saturate(150%); -webkit-backdrop-filter:blur(22px) saturate(150%);
+  border:1px solid var(--stroke); border-radius:var(--r);
+  box-shadow:var(--shadow), inset 0 1px 0 rgba(255,255,255,.16), inset 0 0 0 1px rgba(255,255,255,.01);
+  position:relative;
+}
+.glass::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+  background:linear-gradient(135deg,rgba(255,255,255,.10),transparent 40%);opacity:.5;mix-blend-mode:overlay}
+
+/* ---------- app shell ---------- */
+#app{position:relative;z-index:2;height:100vh;display:flex;flex-direction:column}
+.hidden{display:none!important}
+
+/* ===== ACCESO ===== */
+#login{height:100vh;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:34px;padding:24px}
+.brand-lock{text-align:center}
+.brand-mark{display:inline-flex;align-items:center;gap:13px;margin-bottom:8px}
+.brand-orb{width:46px;height:46px;border-radius:14px;background:var(--accent);position:relative;
+  box-shadow:0 8px 24px rgba(45,212,191,.35), inset 0 1px 0 rgba(255,255,255,.5)}
+.brand-orb::before{content:"";position:absolute;inset:7px;border-radius:8px;border:2px solid rgba(7,11,22,.55)}
+.brand-orb::after{content:"";position:absolute;left:14px;top:13px;width:8px;height:8px;border-radius:50%;background:rgba(7,11,22,.6)}
+.brand-name{font-family:'Space Grotesk';font-weight:700;font-size:27px;letter-spacing:-.5px;line-height:1}
+.brand-sub{color:var(--txt-3);font-size:13px;margin-top:7px;letter-spacing:.3px}
+.login-title{font-family:'Space Grotesk';font-weight:500;font-size:15px;color:var(--txt-2);text-align:center;margin-bottom:-10px}
+.roles{display:flex;gap:18px;flex-wrap:wrap;justify-content:center;max-width:760px}
+.role-card{width:232px;padding:26px 22px;border-radius:var(--r);cursor:pointer;text-align:left;
+  transition:transform .35s cubic-bezier(.2,.8,.2,1), box-shadow .35s, border-color .35s}
+.role-card:hover{transform:translateY(-7px);border-color:var(--stroke-bright);
+  box-shadow:0 22px 50px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.22)}
+.role-ico{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;margin-bottom:16px;
+  background:var(--glass-2);border:1px solid var(--stroke)}
+.role-ico svg{width:21px;height:21px}
+.role-card h3{font-family:'Space Grotesk';font-weight:600;font-size:17px;margin-bottom:5px}
+.role-card p{color:var(--txt-3);font-size:12.5px;line-height:1.5}
+.role-card .who{margin-top:14px;font-size:11.5px;color:var(--txt-2);font-family:'JetBrains Mono';
+  padding-top:12px;border-top:1px solid var(--stroke)}
+
+/* ===== MAIN LAYOUT ===== */
+#main{display:flex;height:100vh;gap:0}
+.sidebar{width:248px;flex-shrink:0;margin:14px 0 14px 14px;padding:20px 14px;display:flex;flex-direction:column;gap:6px}
+.side-brand{display:flex;align-items:center;gap:11px;padding:6px 8px 18px;margin-bottom:6px;border-bottom:1px solid var(--stroke)}
+.side-brand .brand-orb{width:34px;height:34px;border-radius:10px}
+.side-brand .brand-orb::before{inset:5px;border-radius:6px;border-width:1.5px}
+.side-brand .brand-orb::after{left:10px;top:9px;width:6px;height:6px}
+.side-brand b{font-family:'Space Grotesk';font-size:16px;letter-spacing:-.3px}
+.side-brand span{display:block;font-size:10.5px;color:var(--txt-3);margin-top:1px}
+.nav-label{font-size:10.5px;text-transform:uppercase;letter-spacing:1.4px;color:var(--txt-3);padding:14px 10px 6px}
+.nav-item{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:11px;cursor:pointer;
+  color:var(--txt-2);font-size:13.5px;font-weight:500;transition:.18s;border:1px solid transparent;position:relative}
+.nav-item svg{width:18px;height:18px;flex-shrink:0;opacity:.85}
+.nav-item:hover{background:rgba(255,255,255,.04);color:var(--txt)}
+.nav-item.active{background:var(--glass-2);border-color:var(--stroke);color:var(--txt)}
+.nav-item.active::before{content:"";position:absolute;left:-14px;top:50%;transform:translateY(-50%);
+  width:3px;height:20px;border-radius:3px;background:var(--accent)}
+.nav-item .badge{margin-left:auto;font-family:'JetBrains Mono';font-size:11px;padding:1px 7px;border-radius:20px;
+  background:rgba(251,191,36,.16);color:var(--warn);border:1px solid rgba(251,191,36,.25)}
+.side-user{margin-top:auto;padding:12px;border-radius:var(--r-sm);background:rgba(255,255,255,.03);
+  border:1px solid var(--stroke);display:flex;align-items:center;gap:11px}
+.avatar{width:36px;height:36px;border-radius:10px;background:var(--accent-v);display:grid;place-items:center;
+  font-family:'Space Grotesk';font-weight:600;font-size:14px;color:#fff;flex-shrink:0;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.4)}
+.side-user .nm{font-size:13px;font-weight:600;line-height:1.2}
+.side-user .rl{font-size:11px;color:var(--txt-3)}
+.side-user .out{margin-left:auto;cursor:pointer;color:var(--txt-3);padding:6px;border-radius:8px}
+.side-user .out:hover{color:var(--bad);background:rgba(251,113,133,.1)}
+
+.content{flex:1;margin:14px;display:flex;flex-direction:column;min-width:0;overflow:hidden}
+.topbar{display:flex;align-items:center;gap:18px;padding:16px 22px;margin-bottom:14px;flex-shrink:0}
+.topbar h1{font-family:'Space Grotesk';font-weight:600;font-size:21px;letter-spacing:-.4px}
+.topbar .crumb{font-size:12.5px;color:var(--txt-3);margin-top:2px}
+.topbar .spacer{flex:1}
+.search{display:flex;align-items:center;gap:9px;padding:9px 14px;border-radius:11px;width:280px;
+  background:rgba(255,255,255,.03);border:1px solid var(--stroke)}
+.search svg{width:16px;height:16px;color:var(--txt-3)}
+.search input{background:none;border:none;outline:none;color:var(--txt);font-size:13px;width:100%;font-family:'Inter'}
+.search input::placeholder{color:var(--txt-3)}
+.data-stamp{font-family:'JetBrains Mono';font-size:11px;color:var(--txt-3);display:flex;align-items:center;gap:7px;
+  padding:8px 13px;border-radius:10px;background:rgba(52,211,153,.07);border:1px solid rgba(52,211,153,.18)}
+.data-stamp .dot{width:6px;height:6px;border-radius:50%;background:var(--ok);box-shadow:0 0 8px var(--ok)}
+
+.scroll{flex:1;overflow-y:auto;padding-right:4px}
+.scroll::-webkit-scrollbar{width:8px}.scroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,.08);border-radius:8px}
+.scroll::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.14)}
+
+/* ===== DASHBOARD ===== */
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:14px}
+.kpi{padding:20px;border-radius:var(--r);overflow:hidden}
+.kpi .lab{font-size:12px;color:var(--txt-2);display:flex;align-items:center;gap:8px;margin-bottom:14px;font-weight:500}
+.kpi .ic{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;background:var(--glass-2);border:1px solid var(--stroke)}
+.kpi .ic svg{width:15px;height:15px}
+.kpi .val{font-family:'Space Grotesk';font-weight:700;font-size:34px;letter-spacing:-1px;line-height:1;font-feature-settings:"tnum"}
+.kpi .meta{font-size:12px;color:var(--txt-3);margin-top:9px;display:flex;align-items:center;gap:6px}
+.kpi .up{color:var(--ok)}.kpi .down{color:var(--bad)}
+.kpi.sig::before{content:"";position:absolute;width:130%;height:130%;left:-15%;top:-60%;
+  background:radial-gradient(ellipse,rgba(45,212,191,.18),transparent 60%);pointer-events:none}
+
+.grid-2{display:grid;grid-template-columns:1.55fr 1fr;gap:14px;margin-bottom:14px}
+.panel{padding:20px;border-radius:var(--r)}
+.panel-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+.panel-h h3{font-family:'Space Grotesk';font-weight:600;font-size:15px}
+.panel-h .hint{font-size:11.5px;color:var(--txt-3)}
+.seg{display:flex;gap:4px;padding:3px;border-radius:9px;background:rgba(0,0,0,.25);border:1px solid var(--stroke)}
+.seg button{background:none;border:none;color:var(--txt-3);font-size:11.5px;padding:5px 11px;border-radius:7px;cursor:pointer;font-family:'Inter';font-weight:500}
+.seg button.on{background:var(--glass-2);color:var(--txt)}
+
+/* bar chart */
+.bars{display:flex;align-items:flex-end;gap:14px;height:190px;padding-top:10px}
+.bar-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:9px;height:100%}
+.bar-track{flex:1;width:100%;display:flex;flex-direction:column;justify-content:flex-end;gap:3px}
+.bar{width:100%;border-radius:7px 7px 3px 3px;position:relative;transition:height 1.1s cubic-bezier(.2,.8,.2,1);min-height:4px}
+.bar.b1{background:linear-gradient(180deg,#2DD4BF,#14B8A6)}
+.bar.b2{background:linear-gradient(180deg,#38BDF8,#0EA5E9)}
+.bar.b3{background:linear-gradient(180deg,#FB7185,#F43F5E);opacity:.85}
+.bar-lab{font-size:11px;color:var(--txt-3);font-family:'JetBrains Mono'}
+.bar-val{font-family:'Space Grotesk';font-weight:600;font-size:13px}
+.legend{display:flex;gap:16px;margin-top:16px;flex-wrap:wrap}
+.legend span{font-size:11.5px;color:var(--txt-2);display:flex;align-items:center;gap:6px}
+.legend i{width:9px;height:9px;border-radius:3px;display:inline-block}
+
+/* donut / types */
+.type-row{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid rgba(255,255,255,.05)}
+.type-row:last-child{border:none}
+.type-row .tn{font-size:13px;font-weight:500;flex:1}
+.type-row .tmeter{width:90px;height:6px;border-radius:6px;background:rgba(255,255,255,.06);overflow:hidden}
+.type-row .tmeter i{display:block;height:100%;border-radius:6px;background:var(--accent)}
+.type-row .tv{font-family:'JetBrains Mono';font-size:13px;color:var(--txt-2);width:30px;text-align:right}
+
+/* activity */
+.act{display:flex;gap:12px;padding:11px 0;border-bottom:1px solid rgba(255,255,255,.05)}
+.act:last-child{border:none}
+.act .ad{width:8px;height:8px;border-radius:50%;margin-top:5px;flex-shrink:0}
+.act .at{font-size:13px;line-height:1.45}.act .at b{font-weight:600}
+.act .am{font-size:11px;color:var(--txt-3);margin-top:2px;font-family:'JetBrains Mono'}
+
+/* ===== TABLE / GENERAR ===== */
+.toolbar{display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+.field{display:flex;flex-direction:column;gap:5px}
+.field label{font-size:11px;color:var(--txt-3);text-transform:uppercase;letter-spacing:.6px;font-weight:600}
+.select,.input{padding:9px 13px;border-radius:10px;background:rgba(255,255,255,.04);border:1px solid var(--stroke);
+  color:var(--txt);font-size:13px;font-family:'Inter';outline:none;cursor:pointer;min-width:160px}
+.select:focus,.input:focus{border-color:var(--stroke-bright)}
+.btn{padding:10px 18px;border-radius:11px;border:1px solid var(--stroke);background:var(--glass-2);color:var(--txt);
+  font-size:13px;font-weight:600;font-family:'Inter';cursor:pointer;display:inline-flex;align-items:center;gap:8px;transition:.2s}
+.btn svg{width:16px;height:16px}
+.btn:hover{border-color:var(--stroke-bright);transform:translateY(-1px)}
+.btn.primary{background:var(--accent);color:#04121A;border:none;box-shadow:0 8px 22px rgba(45,212,191,.3)}
+.btn.primary:hover{box-shadow:0 12px 30px rgba(45,212,191,.45)}
+.btn:disabled{opacity:.4;cursor:not-allowed;transform:none}
+.btn.ghost{background:rgba(255,255,255,.03)}
+
+.tbl-wrap{border-radius:var(--r);overflow:hidden;padding:6px}
+table{width:100%;border-collapse:collapse}
+thead th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.7px;color:var(--txt-3);
+  font-weight:600;padding:13px 14px;border-bottom:1px solid var(--stroke)}
+tbody td{padding:13px 14px;font-size:13px;border-bottom:1px solid rgba(255,255,255,.045);vertical-align:middle}
+tbody tr{transition:.15s}
+tbody tr:hover{background:rgba(255,255,255,.025)}
+tbody tr:last-child td{border-bottom:none}
+tbody tr.blocked{opacity:.62}
+.chk{width:17px;height:17px;border-radius:5px;border:1.5px solid var(--stroke-bright);background:rgba(255,255,255,.04);
+  cursor:pointer;display:grid;place-items:center;transition:.15s}
+.chk.on{background:var(--accent);border-color:transparent}
+.chk.on svg{width:11px;height:11px;color:#04121A}
+.chk svg{opacity:0}.chk.on svg{opacity:1}
+.chk.dis{opacity:.3;cursor:not-allowed}
+.flag{display:inline-flex;align-items:center;gap:7px;font-weight:500}
+.flag .fc{font-family:'JetBrains Mono';font-size:11px;padding:1px 6px;border-radius:5px;background:rgba(255,255,255,.06);color:var(--txt-2)}
+.rep-nm{font-weight:600}.rep-cod{font-family:'JetBrains Mono';font-size:11.5px;color:var(--txt-3);margin-top:1px}
+.money{font-family:'JetBrains Mono';font-weight:500;font-feature-settings:"tnum"}
+.money.pos{color:var(--txt)}.money.zero{color:var(--txt-3)}.money.neg{color:var(--bad)}
+.pd-chip{font-family:'JetBrains Mono';font-size:11px;font-weight:600;padding:2px 9px;border-radius:7px;display:inline-block}
+.pd-A{background:rgba(52,211,153,.14);color:var(--ok);border:1px solid rgba(52,211,153,.22)}
+.pd-C{background:rgba(251,191,36,.14);color:var(--warn);border:1px solid rgba(251,191,36,.22)}
+.pd-7{background:rgba(251,113,133,.16);color:var(--bad);border:1px solid rgba(251,113,133,.26)}
+.suggest{font-size:12px;font-weight:500;display:flex;align-items:center;gap:7px}
+.suggest .auto{font-size:9.5px;font-family:'JetBrains Mono';color:var(--teal);background:rgba(45,212,191,.1);
+  padding:1px 5px;border-radius:4px;border:1px solid rgba(45,212,191,.2);letter-spacing:.3px}
+.valid{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:500}
+.valid.ok{color:var(--ok)}.valid.no{color:var(--bad)}
+.valid svg{width:15px;height:15px}
+.valid .rsn{font-size:11px;color:var(--txt-3);font-weight:400}
+
+/* batch bar */
+.batchbar{margin-top:14px;padding:14px 20px;border-radius:var(--r);display:flex;align-items:center;gap:16px}
+.batchbar .summary{font-size:13.5px}
+.batchbar .summary b{font-family:'Space Grotesk';font-weight:700;font-size:16px}
+.pill{font-family:'JetBrains Mono';font-size:11.5px;padding:3px 10px;border-radius:20px;display:inline-flex;align-items:center;gap:6px}
+.pill.ok{background:rgba(52,211,153,.12);color:var(--ok);border:1px solid rgba(52,211,153,.22)}
+.pill.no{background:rgba(251,113,133,.12);color:var(--bad);border:1px solid rgba(251,113,133,.22)}
+.pill.warn{background:rgba(251,191,36,.12);color:var(--warn);border:1px solid rgba(251,191,36,.22)}
+
+/* ===== AUTORIZACIÓN ===== */
+.auth-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:14px}
+.auth-card{padding:18px;border-radius:var(--r)}
+.auth-card .ah{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.auth-card .lett-ico{width:38px;height:38px;border-radius:10px;background:var(--glass-2);border:1px solid var(--stroke);display:grid;place-items:center}
+.auth-card .lett-ico svg{width:18px;height:18px;color:var(--sky)}
+.auth-card .num{font-family:'JetBrains Mono';font-size:11px;color:var(--txt-3)}
+.auth-card h4{font-family:'Space Grotesk';font-weight:600;font-size:15px;margin-bottom:3px}
+.auth-card .meta-row{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}
+.mtag{font-size:11px;color:var(--txt-2);background:rgba(255,255,255,.04);padding:4px 9px;border-radius:7px;border:1px solid var(--stroke);font-family:'JetBrains Mono'}
+.auth-actions{display:flex;gap:9px;margin-top:6px}
+.btn.sm{padding:8px 14px;font-size:12.5px;flex:1;justify-content:center}
+.btn.ok{background:rgba(52,211,153,.14);border-color:rgba(52,211,153,.3);color:var(--ok)}
+.btn.ok:hover{background:rgba(52,211,153,.22)}
+.btn.no{background:rgba(251,113,133,.1);border-color:rgba(251,113,133,.26);color:var(--bad)}
+.btn.no:hover{background:rgba(251,113,133,.18)}
+.empty{text-align:center;padding:70px 20px;color:var(--txt-3)}
+.empty svg{width:46px;height:46px;opacity:.4;margin-bottom:16px}
+.empty h3{font-family:'Space Grotesk';font-weight:600;font-size:17px;color:var(--txt-2);margin-bottom:6px}
+
+/* status pills history */
+.st{font-size:11px;font-weight:600;padding:3px 10px;border-radius:20px;display:inline-flex;align-items:center;gap:6px}
+.st i{width:6px;height:6px;border-radius:50%}
+.st.gen{background:rgba(56,189,248,.12);color:var(--sky)} .st.gen i{background:var(--sky)}
+.st.sent{background:rgba(52,211,153,.12);color:var(--ok)} .st.sent i{background:var(--ok)}
+.st.pend{background:rgba(251,191,36,.12);color:var(--warn)} .st.pend i{background:var(--warn)}
+.st.rej{background:rgba(251,113,133,.12);color:var(--bad)} .st.rej i{background:var(--bad)}
+
+/* ===== UPLOAD ===== */
+.drop{padding:50px;border-radius:var(--r);border:1.5px dashed var(--stroke-bright);text-align:center;
+  background:rgba(255,255,255,.015);transition:.25s;cursor:pointer}
+.drop:hover{border-color:var(--teal);background:rgba(45,212,191,.04)}
+.drop .di{width:60px;height:60px;border-radius:16px;background:var(--glass-2);border:1px solid var(--stroke);
+  display:grid;place-items:center;margin:0 auto 18px}
+.drop .di svg{width:28px;height:28px;color:var(--teal)}
+.drop h3{font-family:'Space Grotesk';font-weight:600;font-size:18px;margin-bottom:8px}
+.drop p{color:var(--txt-3);font-size:13px;max-width:420px;margin:0 auto 18px;line-height:1.6}
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:14px}
+.step{padding:18px;border-radius:var(--r)}
+.step .sn{font-family:'JetBrains Mono';font-size:12px;color:var(--teal);margin-bottom:10px}
+.step h4{font-family:'Space Grotesk';font-weight:600;font-size:14px;margin-bottom:6px}
+.step p{font-size:12.5px;color:var(--txt-3);line-height:1.55}
+
+/* ===== MODAL / PREVIEW ===== */
+.overlay{position:fixed;inset:0;z-index:50;background:rgba(4,8,18,.6);backdrop-filter:blur(8px);
+  display:flex;align-items:center;justify-content:center;padding:30px;opacity:0;pointer-events:none;transition:.3s}
+.overlay.show{opacity:1;pointer-events:auto}
+.modal{width:min(940px,96vw);max-height:92vh;border-radius:22px;display:flex;flex-direction:column;overflow:hidden;
+  transform:scale(.96) translateY(10px);transition:.35s cubic-bezier(.2,.8,.2,1)}
+.overlay.show .modal{transform:none}
+.modal-h{display:flex;align-items:center;gap:14px;padding:18px 22px;border-bottom:1px solid var(--stroke);flex-shrink:0}
+.modal-h h3{font-family:'Space Grotesk';font-weight:600;font-size:16px}
+.modal-h .x{margin-left:auto;cursor:pointer;color:var(--txt-3);padding:7px;border-radius:9px}
+.modal-h .x:hover{color:var(--txt);background:rgba(255,255,255,.06)}
+.modal-body{padding:24px;overflow-y:auto;display:flex;gap:22px}
+.letter-frame{flex:1;background:#fff;border-radius:12px;padding:34px 40px;color:#1a1a1a;font-family:Arial,sans-serif;
+  box-shadow:0 20px 60px rgba(0,0,0,.5);min-height:520px;font-size:12.5px;line-height:1.6;overflow:hidden}
+.letter-frame .lf-head{display:flex;justify-content:flex-end}
+.letter-frame .lf-logo{width:46px;height:46px;border-radius:8px;background:#DA1884;display:grid;place-items:center;color:#fff;font-weight:700;font-family:'Space Grotesk';font-size:13px}
+.letter-frame .lf-rule{border-bottom:2px solid #DA1884;margin:10px 0 22px}
+.letter-frame .lf-title{text-align:center;font-weight:700;font-size:15px;letter-spacing:.5px;margin:6px 0 24px}
+.letter-frame .lf-date{text-align:right;margin-bottom:20px;color:#333}
+.letter-frame p{margin-bottom:13px;text-align:justify}
+.letter-frame .nm{font-weight:700}
+.letter-frame .lf-sign{margin-top:34px}
+.letter-frame .lf-sline{width:160px;border-top:1px solid #000;margin:40px 0 5px}
+.letter-frame .lf-foot{margin-top:30px;font-size:9px;color:#777;text-align:right;border-top:1px solid #eee;padding-top:8px}
+.letter-frame .hl{background:#fdeaf4;color:#b5128a;padding:0 3px;border-radius:3px;font-weight:600}
+.preview-side{width:250px;flex-shrink:0}
+.ps-sec{margin-bottom:20px}
+.ps-sec .psl{font-size:10.5px;text-transform:uppercase;letter-spacing:.7px;color:var(--txt-3);margin-bottom:9px;font-weight:600}
+.ps-row{display:flex;justify-content:space-between;font-size:12.5px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.05)}
+.ps-row .k{color:var(--txt-3)}.ps-row .v{font-weight:500;text-align:right;font-family:'JetBrains Mono';font-size:11.5px}
+
+/* toast */
+.toast-wrap{position:fixed;bottom:24px;right:24px;z-index:80;display:flex;flex-direction:column;gap:10px}
+.toast{padding:13px 18px;border-radius:13px;display:flex;align-items:center;gap:11px;font-size:13px;font-weight:500;
+  min-width:280px;animation:slideIn .4s cubic-bezier(.2,.8,.2,1);background:var(--glass);backdrop-filter:blur(20px);
+  border:1px solid var(--stroke);box-shadow:var(--shadow)}
+.toast .ti{width:24px;height:24px;border-radius:7px;display:grid;place-items:center;flex-shrink:0}
+.toast.ok .ti{background:rgba(52,211,153,.16);color:var(--ok)}
+.toast.info .ti{background:rgba(56,189,248,.16);color:var(--sky)}
+.toast .ti svg{width:14px;height:14px}
+@keyframes slideIn{from{transform:translateX(120%);opacity:0}to{transform:none;opacity:1}}
+
+/* progress overlay for batch */
+.gen-prog{display:flex;flex-direction:column;align-items:center;gap:20px;padding:50px}
+.gen-ring{width:90px;height:90px;position:relative}
+.gen-ring svg{transform:rotate(-90deg)}
+.gen-ring .pct{position:absolute;inset:0;display:grid;place-items:center;font-family:'Space Grotesk';font-weight:700;font-size:22px}
+.gen-prog h3{font-family:'Space Grotesk';font-weight:600;font-size:17px}
+.gen-prog p{color:var(--txt-3);font-size:13px;font-family:'JetBrains Mono'}
+
+@media(max-width:1100px){.kpis{grid-template-columns:repeat(2,1fr)}.grid-2{grid-template-columns:1fr}}
+@media(max-width:820px){.sidebar{display:none}.content{margin:10px}.modal-body{flex-direction:column}.preview-side{width:100%}}
+.fade{animation:fade .5s ease}
+@keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+</style>
+</head>
+<body>
+<div class="aurora"><i></i></div>
+<div class="grain"></div>
+
+<div id="app">
+  <!-- ===== ACCESO ===== -->
+  <section id="login">
+    <div class="brand-lock fade">
+      <div class="brand-mark"><div class="brand-orb"></div></div>
+      <div class="brand-name">Cartera</div>
+      <div class="brand-sub">Sistema de Cartas · Cobros Venta Directa · Proyecto CARD</div>
+    </div>
+    <div id="loginBody" class="fade"></div>
+  </section>
+
+  <!-- ===== MAIN ===== -->
+  <section id="main" class="hidden">
+    <aside class="sidebar glass">
+      <div class="side-brand">
+        <div class="brand-orb"></div>
+        <div><b>Cartera</b><span>Cobros Venta Directa</span></div>
+      </div>
+      <div class="nav-label">Operación</div>
+      <div id="nav"></div>
+      <div class="side-user" onclick="go('perfil')" style="cursor:pointer">
+        <div class="avatar" id="uAv">DM</div>
+        <div><div class="nm" id="uNm">Daniel Monge</div><div class="rl" id="uRl">Supervisor</div></div>
+        <div class="out" onclick="event.stopPropagation();logout()" title="Salir">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+        </div>
+      </div>
+    </aside>
+
+    <main class="content">
+      <div class="topbar glass">
+        <div><h1 id="vTitle">Panel</h1><div class="crumb" id="vCrumb">Resumen general de la operación</div></div>
+        <div class="spacer"></div>
+        <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4-4"/></svg><input placeholder="Buscar representante o código…"></div>
+        <div class="data-stamp"><span class="dot"></span><span id="stamp">Datos al 27/06/2026 · 14:32</span></div>
+      </div>
+      <div class="scroll" id="view"></div>
+    </main>
+  </section>
+</div>
+
+<div class="overlay" id="overlay"><div class="modal glass" id="modal"></div></div>
+<div class="toast-wrap" id="toasts"></div>
+
+<script>
+/* ============ Cartera · CRM de cartas (prototipo demo) ============ */
+
+const ICO = {
+  dash:'<path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/>',
+  upload:'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>',
+  gen:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13l2 2 4-4"/>',
+  auth:'<path d="M9 12l2 2 4-4"/><path d="M12 3l8 4v5c0 4.4-3 8-8 9-5-1-8-4.6-8-9V7z"/>',
+  hist:'<path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/>',
+  user:'<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  shield:'<path d="M12 3l8 4v5c0 4.4-3 8-8 9-5-1-8-4.6-8-9V7z"/>',
+  crown:'<path d="M2 18h20l-2-9-5 4-3-7-3 7-5-4z"/>',
+  letter:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/>',
+  check:'<path d="M20 6L9 17l-5-5"/>',
+  x:'<path d="M18 6L6 18M6 6l12 12"/>',
+  send:'<path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>',
+  bolt:'<path d="M13 2L3 14h9l-1 8 10-12h-9z"/>',
+  doc:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>',
+  block:'<circle cx="12" cy="12" r="9"/><path d="M5 5l14 14"/>',
+  sign:'<path d="M2 17c3 .5 4.5-7 7.5-7s2 6 5 6 2.5-3 7.5-3"/><path d="M2 21h20"/>',
+  all:'<path d="M1 12l4.5 4.5L15 7"/><path d="M9 12l4.5 4.5L23 7"/>',
+  bell:'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>',
+  down:'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>',
+};
+const svg=(p,w=18)=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="${w}" height="${w}">${p}</svg>`;
+
+/* ---------- configuración por país (tabla CT) ---------- */
+const PAISES = {
+  GT:{nombre:'Guatemala',ciudad:'Ciudad de Guatemala',entidad:'Productos Avon de Guatemala, S.A.',moneda:'Q',cod:'502'},
+  SV:{nombre:'El Salvador',ciudad:'Antiguo Cuscatlán',entidad:'Productos Avon, S.A. de C.V.',moneda:'US$',cod:'503'},
+  HD:{nombre:'Honduras',ciudad:'Tegucigalpa',entidad:'Productos Avon, S.A. de C.V.',moneda:'L',cod:'504'},
+  NC:{nombre:'Nicaragua',ciudad:'Managua',entidad:'Productos Avon de Nicaragua, S.A.',moneda:'C$',cod:'505'},
+  PA:{nombre:'Panamá',ciudad:'Ciudad de Panamá',entidad:'Productos Avon, S.A.',moneda:'B/.',cod:'507'},
+  RD:{nombre:'Rep. Dominicana',ciudad:'Santo Domingo',entidad:'Productos Avon Dominicana, S.A.',moneda:'RD$',cod:'1809'},
+};
+
+/* ---------- tipos de carta ---------- */
+const TIPOS = {
+  cobro:{nombre:'Carta de Cobro',muestra:true,regla:'pos'},
+  finiquito:{nombre:'Finiquito',muestra:false,regla:'cero'},
+  aldia:{nombre:'Confirmación cuenta al día',muestra:false,regla:'cero'},
+  saldo:{nombre:'Saldo pendiente',muestra:true,regla:'pos'},
+};
+/* variantes de cobro por mora */
+const VARIANTES = [
+  {id:'recordatorio',nombre:'Recordatorio de Pago',estatus:'A',pdMin:1,pdMax:3,tono:'Empático'},
+  {id:'requerimiento',nombre:'Requerimiento Formal',estatus:'C',pdMin:4,pdMax:5,tono:'Firme'},
+  {id:'escalamiento',nombre:'Aviso de Escalamiento',estatus:'C',pdMin:6,pdMax:6,tono:'Fuerte'},
+  {id:'prejuridica',nombre:'Notificación Prejurídica',estatus:'C',pdMin:7,pdMax:7,tono:'Máxima presión'},
+];
+const variantePorPD = pd => VARIANTES.find(v=>pd>=v.pdMin&&pd<=v.pdMax) || VARIANTES[3];
+
+/* ---------- usuarios reales ---------- */
+const iniciales = n => {const p=n.trim().split(/\s+/);return ((p[0]?.[0]||'')+(p[2]?.[0]||p[1]?.[0]||'')).toUpperCase();};
+const SUPERVISION = [
+  {cod:'—',nombre:'Daniel Monge',cargo:'Supervisor de Cobros'},
+  {cod:'—',nombre:'Oliver Santos',cargo:'Supervisor de Cobros'},
+  {cod:'—',nombre:'Henry Velásquez',cargo:'Líder de Cobros'},
+];
+const GESTORES = [
+  {cod:'15521',nombre:'Sherly Amavilia Cotom Mateo'},
+  {cod:'15548',nombre:'Sarai Azusena Ticas Garcia'},
+  {cod:'15529',nombre:'Jasmin Virginia Ramirez Colay'},
+  {cod:'15533',nombre:'María Alejandra Valey Hernandez'},
+  {cod:'15524',nombre:'Astrid Paola Vasquez Orellana'},
+  {cod:'15542',nombre:'Karina Alejandra Noriega Cifuentes'},
+  {cod:'15523',nombre:'Diego Jose Soto Giron'},
+  {cod:'15534',nombre:'Dylan Eduardo Scheel Reyes'},
+  {cod:'15526',nombre:'Bryan David Rodriguez Larios'},
+  {cod:'15525',nombre:'Juan Francisco Reyes López'},
+  {cod:'15539',nombre:'Angie Dyana Buch Diaz'},
+  {cod:'15549',nombre:'Alejandra Sofía Díaz García'},
+  {cod:'15547',nombre:'Heidi Adelaida Morales Salguero'},
+  {cod:'15546',nombre:'Mabel Carolina Pineda Villagrán'},
+  {cod:'15557',nombre:'Derick Joseph Alejandro González Sis'},
+  {cod:'15563',nombre:'Jonathan Omar Guzmán Giron'},
+  {cod:'12332',nombre:'Marcos Enrique Canteo Becerra'},
+  {cod:'12033',nombre:'Mishelle Andrea Soto Meza'},
+  {cod:'13664',nombre:'Dahirin Alexandra Pérez López'},
+];
+/* lista combinada para el panel de administración */
+let USUARIOS = [
+  ...SUPERVISION.map(u=>({...u,rol:'super',av:iniciales(u.nombre),cartera:'Todos los países',activo:true})),
+  ...GESTORES.map(u=>({...u,rol:'gestor',cargo:'Gestor de Cobros',av:iniciales(u.nombre),cartera:'Sin asignar',activo:true})),
+];
+
+/* ---------- accesos (login) ---------- */
+const PRUEBAS = true; // sin claves durante pruebas · en producción se piden Avon+código
+const ROLES = [
+  {id:'gestor',nombre:'Gestor de Cobros',ico:ICO.user,desc:'Genera cartas de su cartera y registra el envío y seguimiento de cada una.',who:GESTORES.length+' gestores',user:'Sherly Cotom Mateo',av:'SC'},
+  {id:'super',nombre:'Supervisión',ico:ICO.shield,desc:'Visión completa: autoriza, firma y administra personas, plantillas y configuración.',who:'Daniel · Oliver · Henry',user:'Daniel Monge',av:'DM'},
+];
+
+/* ---------- catálogo de cartas (con estado de entrega) ---------- */
+const CANALES={whatsapp:'WhatsApp',fisica:'Carta física',correo:'Correo',otro:'Otro medio'};
+/* entrega: emitida → enviada_gerente → entregada (req. evidencia+canal) → respondida */
+let CARTAS=[
+  {num:'GT-2026-0147',cod:'1255019',tipo:'cobro',gestor:'Sherly Amavilia Cotom Mateo',fecha:'2026-06-26',autorizo:'Daniel Monge',entrega:'respondida',canal:'whatsapp',evid:true},
+  {num:'GT-2026-0146',cod:'1210802',tipo:'cobro',gestor:'Sherly Amavilia Cotom Mateo',fecha:'2026-06-26',autorizo:'Daniel Monge',entrega:'entregada',canal:'whatsapp',evid:true},
+  {num:'GT-2026-0145',cod:'1184430',tipo:'cobro',gestor:'Sherly Amavilia Cotom Mateo',fecha:'2026-06-25',autorizo:'Oliver Santos',entrega:'enviada_gerente',canal:null,evid:false},
+  {num:'SV-2026-0098',cod:'2061190',tipo:'finiquito',gestor:'Diego Jose Soto Giron',fecha:'2026-06-25',autorizo:'Henry Velásquez',entrega:'entregada',canal:'correo',evid:true},
+  {num:'SV-2026-0097',cod:'2098771',tipo:'aldia',gestor:'Diego Jose Soto Giron',fecha:'2026-06-24',autorizo:'Henry Velásquez',entrega:'respondida',canal:'correo',evid:true},
+  {num:'HD-2026-0203',cod:'3071558',tipo:'cobro',gestor:'Karina Alejandra Noriega Cifuentes',fecha:'2026-06-24',autorizo:'Oliver Santos',entrega:'emitida',canal:null,evid:false},
+  {num:'NC-2026-0061',cod:'4033217',tipo:'cobro',gestor:'Marcos Enrique Canteo Becerra',fecha:'2026-06-23',autorizo:'Daniel Monge',entrega:'enviada_gerente',canal:null,evid:false},
+  {num:'PA-2026-0044',cod:'5044190',tipo:'saldo',gestor:'Mishelle Andrea Soto Meza',fecha:'2026-06-23',autorizo:'Daniel Monge',entrega:'entregada',canal:'fisica',evid:true},
+  {num:'GT-2026-0144',cod:'1255019',tipo:'cobro',gestor:'Sherly Amavilia Cotom Mateo',fecha:'2026-06-20',autorizo:'Daniel Monge',entrega:'respondida',canal:'whatsapp',evid:true},
+  {num:'RD-2026-0033',cod:'8011245',tipo:'cobro',gestor:'Dahirin Alexandra Pérez López',fecha:'2026-06-20',autorizo:'Oliver Santos',entrega:'emitida',canal:null,evid:false},
+];
+const ENT={emitida:{lab:'Emitida',st:'gen'},enviada_gerente:{lab:'Enviada a gerente',st:'pend'},
+  entregada:{lab:'Entregada a rep.',st:'sent'},respondida:{lab:'Con respuesta',st:'sent'}};
+
+/* ---------- datos demo (simula el CSV exportado del Excel/SQL) ---------- */
+const REPS = [
+  {cod:'1210802',pais:'GT',zona:'021',nombre:'Lucía Hernández Morales',estatus:'A',inact:2,balance:842.50,camp:'C09-2026',cedula:'2987 65432 0101',prev:[]},
+  {cod:'1184430',pais:'GT',zona:'014',nombre:'Brenda Sicán López',estatus:'C',inact:5,balance:1560.00,camp:'C07-2026',cedula:'3012 88210 0108',prev:[{tipo:'cobro',pd:5}]},
+  {cod:'1255019',pais:'GT',zona:'033',nombre:'Karla Patricia Ruano',estatus:'C',inact:7,balance:2310.75,camp:'C05-2026',cedula:'2540 11933 0114',prev:[]},
+  {cod:'2098771',pais:'SV',zona:'008',nombre:'María José Alvarado',estatus:'A',inact:1,balance:96.40,camp:'C10-2026',cedula:'04412235-7',prev:[]},
+  {cod:'2150334',pais:'SV',zona:'019',nombre:'Sandra Elizabeth Cruz',estatus:'C',inact:6,balance:412.80,camp:'C06-2026',cedula:'01998340-2',prev:[]},
+  {cod:'2061190',pais:'SV',zona:'004',nombre:'Gloria Estela Ramírez',estatus:'A',inact:0,balance:0.00,camp:'C11-2026',cedula:'02233981-5',prev:[]},
+  {cod:'3071558',pais:'HD',zona:'027',nombre:'Wendy Carolina Murillo',estatus:'C',inact:4,balance:1875.00,camp:'C07-2026',cedula:'0801-1992-04417',prev:[]},
+  {cod:'3122890',pais:'HD',zona:'012',nombre:'Iris Yolanda Banegas',estatus:'A',inact:3,balance:534.20,camp:'C09-2026',cedula:'0501-1988-00921',prev:[{tipo:'cobro',pd:3}]},
+  {cod:'4033217',pais:'NC',zona:'006',nombre:'Massiel del Carmen Téllez',estatus:'C',inact:7,balance:3120.00,camp:'C04-2026',cedula:'001-150790-1004B',prev:[]},
+  {cod:'4087602',pais:'NC',zona:'015',nombre:'Heyling Tatiana Pavón',estatus:'A',inact:2,balance:0.00,camp:'C10-2026',cedula:'401-220693-1002K',prev:[]},
+  {cod:'5044190',pais:'PA',zona:'003',nombre:'Yarisel Edith Quintero',estatus:'C',inact:5,balance:678.90,camp:'C08-2026',cedula:'8-912-2045',prev:[]},
+  {cod:'5099820',pais:'PA',zona:'011',nombre:'Indira Massiel Saldaña',estatus:'A',inact:1,balance:-45.00,camp:'C11-2026',cedula:'9-745-118',prev:[]},
+  {cod:'8011245',pais:'RD',zona:'002',nombre:'Rosángela Altagracia Peña',estatus:'C',inact:6,balance:4250.00,camp:'C06-2026',cedula:'402-1188340-9',prev:[]},
+  {cod:'8055671',pais:'RD',zona:'009',nombre:'Yaneiry Mercedes Disla',estatus:'A',inact:2,balance:1180.50,camp:'C09-2026',cedula:'001-2299110-4',prev:[]},
+];
+
+const money=(s,n)=>s+' '+n.toLocaleString('es-GT',{minimumFractionDigits:2,maximumFractionDigits:2});
+
+/* ---------- validación ---------- */
+function validar(rep,tipoId){
+  const t=TIPOS[tipoId], b=rep.balance;
+  if(t.regla==='pos' && b<=0) return {ok:false,rsn:b===0?'Saldo cero':'Saldo negativo'};
+  if(t.regla==='cero' && b>0)  return {ok:false,rsn:'Tiene saldo pendiente'};
+  if(tipoId==='cobro'){
+    const v=variantePorPD(rep.inact);
+    const dup=rep.prev.some(p=>p.tipo==='cobro'&&p.pd>=v.pdMin&&p.pd<=v.pdMax);
+    if(dup) return {ok:false,rsn:'Duplicada (mismo tramo)'};
+  }
+  return {ok:true};
+}
+
+/* ============ ESTADO ============ */
+let STATE={role:null,view:'dash',tipo:'cobro',sel:new Set(),emitidas:[],firmas:{},delegado:null,plantillas:{}};
+
+/* ---------- ACCESO ---------- */
+function renderLogin(){
+  document.getElementById('loginBody').innerHTML=`
+    <div class="login-title" style="margin-bottom:18px">Selecciona tu acceso</div>
+    <div class="roles">${ROLES.map(r=>`
+      <div class="role-card glass" onclick="pickRole('${r.id}')">
+        <div class="role-ico">${svg(r.ico,21)}</div>
+        <h3>${r.nombre}</h3><p>${r.desc}</p>
+        <div class="who">${r.who}</div>
+      </div>`).join('')}</div>
+    ${PRUEBAS?`<div style="margin-top:22px;font-size:12px;color:var(--txt-3);font-family:'JetBrains Mono';display:flex;align-items:center;gap:8px;justify-content:center">
+      <span class="pill warn">${svg(ICO.bolt,12)} Modo pruebas</span> acceso sin claves · en producción: Avon + código</div>`:''}`;
+}
+function pickRole(id){
+  const r=ROLES.find(x=>x.id===id), isG=id==='gestor';
+  const userSel=isG
+    ? `<select class="select" id="loginUser" style="width:100%;min-width:0">${GESTORES.map(g=>`<option value="${g.cod}">${g.nombre.split(' ').slice(0,3).join(' ')} · ${g.cod}</option>`).join('')}</select>`
+    : `<select class="select" id="loginUser" style="width:100%;min-width:0">${SUPERVISION.map(s=>`<option>${s.nombre}</option>`).join('')}</select>`;
+  document.getElementById('loginBody').innerHTML=`
+    <div class="glass" style="width:390px;padding:28px;margin:0 auto;border-radius:var(--r);text-align:left">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:22px">
+        <div class="role-ico" style="margin:0">${svg(r.ico,21)}</div>
+        <div><h3 style="font-family:'Space Grotesk';font-size:17px">${r.nombre}</h3>
+          <div style="font-size:12px;color:var(--txt-3)">${PRUEBAS?'Modo pruebas · elige tu usuario':(isG?'Ingresa con tu clave':'Usuario y clave')}</div></div>
+      </div>
+      <div class="field" style="margin-bottom:14px"><label>${isG?'Gestor':'Usuario'}</label>${userSel}</div>
+      ${PRUEBAS?`<div style="font-size:11px;color:var(--warn);margin-bottom:18px;font-family:'JetBrains Mono';display:flex;align-items:center;gap:7px">${svg(ICO.bolt,12)} Sin clave en pruebas</div>`
+        :`<div class="field" style="margin-bottom:8px"><label>Clave</label>
+            <input class="input" id="loginKey" type="password" style="width:100%;min-width:0" placeholder="${isG?'Avon + tu código':'Tu clave'}" onkeydown="if(event.key==='Enter')doLogin('${id}')"></div>
+          <div style="font-size:11px;color:var(--txt-3);margin-bottom:18px;font-family:'JetBrains Mono'">${isG?'Ej. Avon15521':'Tu clave de supervisión'}</div>`}
+      <div style="display:flex;gap:10px">
+        <button class="btn ghost" style="flex:1;justify-content:center" onclick="renderLogin()">Volver</button>
+        <button class="btn primary" style="flex:1;justify-content:center" onclick="doLogin('${id}')">${svg(ICO.shield,15)} Entrar</button>
+      </div>
+    </div>`;
+  setTimeout(()=>document.getElementById('loginKey')?.focus(),60);
+}
+function doLogin(id){
+  if(id==='gestor'){
+    let g;
+    if(PRUEBAS){ g=GESTORES.find(x=>x.cod===document.getElementById('loginUser').value); }
+    else { const m=(document.getElementById('loginKey').value||'').trim().match(/^avon\s*(\d+)$/i);
+      g=m&&GESTORES.find(x=>x.cod===m[1]); if(!g){toast('info','Clave incorrecta · usa Avon + tu código');return;} }
+    STATE.role={id:'gestor',nombre:'Gestor de Cobros',user:g.nombre,av:iniciales(g.nombre),cod:g.cod};
+  }else{
+    const nm=document.getElementById('loginUser').value, s=SUPERVISION.find(x=>x.nombre===nm);
+    if(!PRUEBAS && !(document.getElementById('loginKey').value||'').trim()){toast('info','Ingresa tu clave');return;}
+    STATE.role={id:'super',nombre:s.cargo,user:s.nombre,av:iniciales(s.nombre)};
+  }
+  enterApp();
+}
+function enterApp(){
+  document.getElementById('login').classList.add('hidden');
+  document.getElementById('main').classList.remove('hidden');
+  document.getElementById('uAv').textContent=STATE.role.av;
+  document.getElementById('uNm').textContent=STATE.role.user;
+  document.getElementById('uRl').textContent=STATE.role.nombre;
+  buildNav(); go(STATE.role.id==='gestor'?'perfil':'dash');
+}
+function logout(){STATE={role:null,view:'dash',tipo:'cobro',sel:new Set(),emitidas:STATE.emitidas,firmas:STATE.firmas,delegado:STATE.delegado,plantillas:STATE.plantillas};
+  document.getElementById('main').classList.add('hidden');
+  document.getElementById('login').classList.remove('hidden');renderLogin();}
+
+/* ---------- NAV ---------- */
+function buildNav(){
+  const isSuper=STATE.role.id==='super';
+  const items = isSuper ? [
+    {id:'dash',ic:ICO.dash,t:'Panel'},
+    {id:'upload',ic:ICO.upload,t:'Cargar datos'},
+    {id:'gen',ic:ICO.gen,t:'Generar cartas'},
+    {id:'auth',ic:ICO.auth,t:'Autorización',badge:'4'},
+    {id:'hist',ic:ICO.hist,t:'Historial'},
+    {id:'plantillas',ic:ICO.doc,t:'Plantillas'},
+    {id:'firma',ic:ICO.sign,t:'Mi firma'},
+    {id:'users',ic:ICO.user,t:'Personas'},
+  ] : [
+    {id:'perfil',ic:ICO.dash,t:'Mi panel'},
+    {id:'recop',ic:ICO.down,t:'Recopilación'},
+    ...(STATE.delegado===STATE.role.user?[{id:'upload',ic:ICO.upload,t:'Cargar base',badge:'★'}]:[]),
+    {id:'gen',ic:ICO.gen,t:'Generar cartas'},
+    {id:'hist',ic:ICO.hist,t:'Mis cartas'},
+  ];
+  document.getElementById('nav').innerHTML=items.map((i,k)=>`
+    <div class="nav-item ${k===0?'active':''}" data-v="${i.id}" onclick="go('${i.id}')">
+      ${svg(i.ic,18)}<span>${i.t}</span>${i.badge?`<span class="badge">${i.badge}</span>`:''}
+    </div>`).join('');
+}
+const TITLES={dash:['Panel','Resumen general de la operación'],
+  upload:['Cargar datos','Importa el resultado del query SQL'],
+  gen:['Generar cartas','Selecciona cuentas y emite por lote'],
+  auth:['Autorización','Cartas en espera de tu firma'],
+  hist:['Historial','Registro completo de cartas emitidas'],
+  users:['Personas','Gestores y supervisión · administración de accesos'],
+  firma:['Mi firma','Se aplica a todas las cartas que autorices'],
+  recop:['Recopilación','Plantilla de carga y cortes del día'],
+  perfil:['Mi perfil','Tu actividad y tus cartas'],
+  plantillas:['Plantillas de cartas','Edita el texto · los campos del Excel no cambian']};
+function go(v){
+  STATE.view=v; STATE.sel.clear();
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.toggle('active',n.dataset.v===v));
+  document.getElementById('vTitle').textContent=TITLES[v][0];
+  document.getElementById('vCrumb').textContent=TITLES[v][1];
+  const el=document.getElementById('view'); el.classList.remove('fade');void el.offsetWidth;el.classList.add('fade');
+  ({dash:viewDash,upload:viewUpload,gen:viewGen,auth:viewAuth,hist:viewHist,users:viewUsers,firma:viewFirma,recop:viewRecop,perfil:viewPerfil,plantillas:viewPlantillas}[v])();
+}
+
+/* ============ DASHBOARD ============ */
+function viewDash(){
+  const total=142, pend=4, block=2;
+  const byCountry=[['GT',38],['SV',24],['HD',29],['NC',18],['PA',15],['RD',18]];
+  const max=Math.max(...byCountry.map(c=>c[1]));
+  document.getElementById('view').innerHTML=`
+  ${STATE.role.id==='gestor'?cortesBanner():''}
+  <div class="kpis">
+    <div class="kpi glass sig">
+      <div class="lab"><div class="ic" style="color:var(--teal)">${svg(ICO.doc,15)}</div>${STATE.role.id==='gestor'?'Mis cartas':'Cartas emitidas'}</div>
+      <div class="val">${STATE.role.id==='gestor'?'37':'142'}</div><div class="meta up">▲ ${STATE.role.id==='gestor'?'6':'18'} esta campaña</div></div>
+    <div class="kpi glass">
+      <div class="lab"><div class="ic" style="color:var(--warn)">${svg(ICO.auth,15)}</div>Pendientes</div>
+      <div class="val">4</div><div class="meta">en espera de firma</div></div>
+    <div class="kpi glass">
+      <div class="lab"><div class="ic" style="color:var(--bad)">${svg(ICO.block,15)}</div>Bloqueadas</div>
+      <div class="val">2</div><div class="meta">saldo cero / negativo</div></div>
+    <div class="kpi glass">
+      <div class="lab"><div class="ic" style="color:var(--ok)">${svg(ICO.send,15)}</div>Tasa de envío</div>
+      <div class="val">93<span style="font-size:18px">%</span></div><div class="meta up">▲ 4% vs anterior</div></div>
+  </div>
+
+  <div class="grid-2">
+    <div class="panel glass">
+      <div class="panel-h"><h3>Cartas por país</h3>
+        <div class="seg"><button class="on">Campaña</button><button>Año</button></div></div>
+      <div class="bars">${byCountry.map(([c,v])=>{
+        const h=(v/max)*100, ok=Math.round(v*.85), bl=v-ok;
+        return `<div class="bar-col"><span class="bar-val">${v}</span>
+          <div class="bar-track">
+            <div class="bar b3" style="height:${(bl/max)*100}%"></div>
+            <div class="bar ${c==='GT'?'b1':'b2'}" style="height:${(ok/max)*100}%"></div>
+          </div><span class="bar-lab">${c}</span></div>`;}).join('')}
+      </div>
+      <div class="legend">
+        <span><i style="background:#2DD4BF"></i>Emitidas y enviadas</span>
+        <span><i style="background:#FB7185"></i>Bloqueadas por saldo</span>
+      </div>
+    </div>
+
+    <div class="panel glass">
+      <div class="panel-h"><h3>Por tipo de carta</h3></div>
+      ${[['Cobro · Recordatorio',41,'b1'],['Cobro · Requerimiento',33],['Cobro · Prejurídica',19],['Finiquito',28],['Cuenta al día',12],['Saldo pendiente',9]]
+        .map(([n,v])=>`<div class="type-row"><span class="tn">${n}</span>
+          <div class="tmeter"><i style="width:${(v/41)*100}%"></i></div>
+          <span class="tv">${v}</span></div>`).join('')}
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="panel glass">
+      <div class="panel-h"><h3>Actividad reciente</h3><span class="hint">Últimas acciones</span></div>
+      ${[['var(--ok)','<b>Daniel Monge</b> autorizó lote de 12 cartas · Guatemala','hace 14 min'],
+         ['var(--sky)','<b>Marta Ríos</b> generó Requerimiento Formal · cód 2150334','hace 38 min'],
+         ['var(--bad)','Bloqueada: Cobro a cód 2061190 · saldo cero','hace 52 min'],
+         ['var(--warn)','<b>4 cartas</b> esperan firma de un supervisor','hace 1 h'],
+         ['var(--ok)','<b>Henry Velásquez</b> firmó 6 finiquitos · El Salvador','hace 2 h']]
+        .map(([c,t,m])=>`<div class="act"><div class="ad" style="background:${c}"></div>
+          <div><div class="at">${t}</div><div class="am">${m}</div></div></div>`).join('')}
+    </div>
+    <div class="panel glass">
+      <div class="panel-h"><h3>Distribución por mora</h3><span class="hint">Cuentas activas</span></div>
+      ${[['Estatus A · PD1–3',62,'var(--ok)'],['Estatus C · PD4–5',38,'var(--warn)'],['Estatus C · PD6',22,'#FB923C'],['Estatus C · PD7',20,'var(--bad)']]
+        .map(([n,v,c])=>`<div class="type-row"><span class="tn">${n}</span>
+          <div class="tmeter"><i style="width:${(v/62)*100}%;background:${c}"></i></div>
+          <span class="tv">${v}</span></div>`).join('')}
+      <div style="margin-top:18px;padding:14px;border-radius:12px;background:rgba(45,212,191,.06);border:1px solid rgba(45,212,191,.16);font-size:12.5px;color:var(--txt-2);line-height:1.5">
+        ${svg(ICO.bolt,14)} El sistema elige la variante de cobro automáticamente según el tramo de cada cuenta.
+      </div>
+    </div>
+  </div>
+  ${STATE.role.id==='super'?transitoPanel()+gestorPanel():''}`;
+}
+function gestorPanel(){
+  const data=GESTORES.map(g=>({nombre:g.nombre,...metricasGestor(g.nombre)})).filter(d=>d.emit>0)
+    .sort((a,b)=>b.emit-a.emit);
+  return `<div class="panel glass" style="margin-top:14px">
+    <div class="panel-h"><div><h3>Consolidado por gestor</h3>
+      <div style="font-size:12px;color:var(--txt-3);margin-top:3px">Cuántas cartas emitió y entregó cada gestor · ligado a la persona</div></div></div>
+    <div class="toolbar" style="margin-bottom:14px">
+      <div class="field"><label>Gestor</label><select class="select"><option>Todos los gestores</option>${GESTORES.map(g=>`<option>${g.nombre.split(' ').slice(0,3).join(' ')}</option>`).join('')}</select></div>
+      <div class="field"><label>Tipo de carta</label><select class="select"><option>Todos los tipos</option>${VARIANTES.map(v=>`<option>Cobro · ${v.nombre}</option>`).join('')}<option>Finiquito</option><option>Confirmación cuenta al día</option><option>Saldo pendiente</option></select></div>
+      <div class="field"><label>Desde</label><input type="date" class="input" style="min-width:140px"></div>
+      <div class="field"><label>Hasta</label><input type="date" class="input" style="min-width:140px"></div>
+    </div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Gestor</th><th>Emitidas</th><th>Enviadas a gerente</th><th>Entregadas (evidencia)</th><th>Con respuesta</th></tr></thead>
+      <tbody>${data.map(d=>`<tr>
+        <td><div style="display:flex;align-items:center;gap:10px"><div class="avatar" style="width:30px;height:30px;border-radius:8px;font-size:11px;background:linear-gradient(135deg,#2DD4BF,#38BDF8)">${iniciales(d.nombre)}</div><div class="rep-nm">${d.nombre.split(' ').slice(0,3).join(' ')}</div></div></td>
+        <td><span class="money">${d.emit}</span></td>
+        <td><span class="money">${d.gerente}</span></td>
+        <td><span class="money" style="color:var(--ok)">${d.entreg}</span> <span class="mtag" style="margin-left:4px">${d.evid} ✓</span></td>
+        <td>${d.resp?`<span class="money" style="color:var(--warn)">${d.resp}</span>`:'<span style="color:var(--txt-3)">0</span>'}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>
+  </div>`;
+}
+
+/* ============ CARGAR DATOS · CONSOLIDACIÓN ============ */
+function viewUpload(){
+  const subidos=14;
+  const recop=GESTORES.map((g,i)=>({nombre:g.nombre,cod:g.cod,subio:i<subidos,
+    n:i<subidos?(5+((i*7)%18)):0,hora:i<subidos?`${10+(i%3)}:${String((i*13)%60).padStart(2,'0')}`:'—'}));
+  const totalCod=recop.reduce((a,b)=>a+b.n,0);
+  document.getElementById('view').innerHTML=`
+  <div class="panel glass" style="margin-bottom:14px">
+    <div class="panel-h">
+      <div><h3>1 · Consolidado de recopilación</h3>
+        <div style="font-size:12px;color:var(--txt-3);margin-top:3px">Los 19 gestores suben su plantilla · el sistema consolida en automático</div></div>
+      <button class="btn primary" onclick="downloadConsolidado(${totalCod})">${svg(ICO.down)} Descargar consolidado (${totalCod})</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px">
+      <div style="flex:1;height:8px;border-radius:8px;background:rgba(255,255,255,.06);overflow:hidden">
+        <div style="height:100%;width:${(subidos/19)*100}%;background:var(--accent);border-radius:8px"></div></div>
+      <span style="font-family:'Space Grotesk';font-weight:600;font-size:14px">${subidos}/19 gestores</span>
+      <span class="pill ok">${svg(ICO.check,12)} ${totalCod} códigos</span>
+    </div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Gestor</th><th>Cód. empleado</th><th>Códigos recopilados</th><th>Hora</th><th>Estado</th></tr></thead>
+      <tbody>${recop.map(r=>`<tr class="${r.subio?'':'blocked'}">
+        <td><div class="rep-nm">${r.nombre.split(' ').slice(0,3).join(' ')}</div></td>
+        <td><span style="font-family:'JetBrains Mono';font-size:12px;color:var(--txt-3)">${r.cod}</span></td>
+        <td>${r.subio?`<span class="money">${r.n}</span>`:'<span style="color:var(--txt-3)">—</span>'}</td>
+        <td><span style="font-family:'JetBrains Mono';font-size:12px;color:var(--txt-3)">${r.hora}</span></td>
+        <td><span class="st ${r.subio?'sent':'pend'}"><i></i>${r.subio?'Recibido':'Pendiente'}</span></td>
+      </tr>`).join('')}</tbody>
+    </table></div>
+  </div>
+
+  <div class="panel glass">
+    <div class="panel-h"><div><h3>2 · Cargar base del query</h3>
+      <div style="font-size:12px;color:var(--txt-3);margin-top:3px">Ejecuta el query con el consolidado y sube aquí la base completa (todas las columnas)</div></div></div>
+    <div class="drop glass" onclick="loadDemo()" style="margin-top:4px">
+      <div class="di">${svg(ICO.upload,28)}</div>
+      <h3>Sube la base del query SQL</h3>
+      <p>El sistema lee todas las columnas (código, país, balance, estatus, zona, campaña…) y deja todo listo para generar las cartas.</p>
+      <button class="btn primary">${svg(ICO.bolt)} Cargar base de ejemplo</button>
+    </div>
+  </div>`;
+}
+function downloadConsolidado(n){
+  let csv='Codigo,Pais\n';
+  REPS.forEach(r=>{csv+=`${r.cod},${PAISES[r.pais].nombre}\n`;});
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download='consolidado_recopilacion.csv';a.click();
+  toast('ok',`Consolidado descargado · ${n} códigos · listo para el query`);
+}
+function loadDemo(){toast('ok','Base cargada · '+REPS.length+' representantes con todos sus datos'); go('gen');}
+
+/* ============ GENERAR CARTAS ============ */
+function viewGen(){
+  const tipo=STATE.tipo;
+  const rows=REPS.map(r=>{
+    const v=validar(r,tipo);
+    const variante=tipo==='cobro'?variantePorPD(r.inact):null;
+    const p=PAISES[r.pais];
+    const pdClass=r.inact>=7?'pd-7':(r.estatus==='A'?'pd-A':'pd-C');
+    const bClass=r.balance>0?'pos':(r.balance===0?'zero':'neg');
+    const canSel=v.ok;
+    const checked=STATE.sel.has(r.cod);
+    return `<tr class="${v.ok?'':'blocked'}">
+      <td><div class="chk ${checked?'on':''} ${canSel?'':'dis'}" onclick="${canSel?`toggleSel('${r.cod}')`:''}">${svg(ICO.check,11)}</div></td>
+      <td><div class="flag"><span class="fc">${r.pais}</span>${p.nombre}</div></td>
+      <td><div class="rep-nm">${r.nombre}</div><div class="rep-cod">${r.cod} · Zona ${r.zona}</div></td>
+      <td><span class="money ${bClass}">${money(p.moneda,r.balance)}</span></td>
+      <td><span class="pd-chip ${pdClass}">${r.estatus}·PD${r.inact||0}</span></td>
+      <td>${tipo==='cobro'
+        ? `<div class="suggest">${variante.nombre}<span class="auto">AUTO</span></div>`
+        : `<div class="suggest">${TIPOS[tipo].nombre}</div>`}</td>
+      <td>${v.ok
+        ? `<span class="valid ok">${svg(ICO.check,15)} Lista</span>`
+        : `<span class="valid no">${svg(ICO.block,15)} Bloqueada <span class="rsn">· ${v.rsn}</span></span>`}</td>
+      <td style="text-align:right">${v.ok?`<button class="btn ghost sm" onclick="preview('${r.cod}')" style="padding:6px 12px">Vista previa</button>`:''}</td>
+    </tr>`;
+  }).join('');
+
+  const validos=REPS.filter(r=>validar(r,tipo).ok);
+  const blocked=REPS.length-validos.length;
+  const selN=STATE.sel.size;
+
+  document.getElementById('view').innerHTML=`
+  <div class="toolbar">
+    <div class="field"><label>Tipo de carta</label>
+      <select class="select" onchange="setTipo(this.value)">
+        ${Object.entries(TIPOS).map(([id,t])=>`<option value="${id}" ${id===tipo?'selected':''}>${t.nombre}</option>`).join('')}
+      </select></div>
+    <div class="field"><label>País</label>
+      <select class="select"><option>Todos los países</option>${Object.entries(PAISES).map(([k,p])=>`<option>${p.nombre}</option>`).join('')}</select></div>
+    <div class="field"><label>Firma al aprobar</label>
+      <select class="select"><option>Daniel Monge</option><option>Oliver Santos</option><option>Henry Velásquez</option></select></div>
+    <div style="flex:1"></div>
+    <div class="field"><label>&nbsp;</label>
+      <button class="btn ghost" onclick="selectAll()">${svg(ICO.check)} Seleccionar válidas</button></div>
+  </div>
+
+  <div class="tbl-wrap glass">
+    <table>
+      <thead><tr><th style="width:42px"></th><th>País</th><th>Representante</th><th>Balance</th><th>Mora</th><th>Carta sugerida</th><th>Validación</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>
+
+  <div class="batchbar glass">
+    <div class="summary"><b>${selN}</b> seleccionadas para emitir</div>
+    <span class="pill ok">${svg(ICO.check,12)} ${validos.length} válidas</span>
+    ${blocked?`<span class="pill no">${svg(ICO.block,12)} ${blocked} bloqueadas</span>`:''}
+    <span class="pill warn">${svg(ICO.bolt,12)} variante automática por mora</span>
+    <div style="flex:1"></div>
+    <button class="btn primary" ${selN?'':'disabled'} onclick="generarLote()">${svg(ICO.gen)} Generar lote (${selN})</button>
+  </div>`;
+}
+function setTipo(t){STATE.tipo=t;STATE.sel.clear();viewGen();}
+function toggleSel(cod){STATE.sel.has(cod)?STATE.sel.delete(cod):STATE.sel.add(cod);viewGen();}
+function selectAll(){REPS.filter(r=>validar(r,STATE.tipo).ok).forEach(r=>STATE.sel.add(r.cod));viewGen();}
+
+/* ---------- preview de carta (render real con plantilla) ---------- */
+const AVON_LOGO="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAlgAAAJYCAYAAAC+ZpjcAAA2JklEQVR4nO3deZzdZXn38eusM3O2TGYm+x4CsiYBkrALSlgVyMKi9tFWHrVPW6t9qlUpraJVcK3Sqm21Vlp9VLYk7BBAESJbQkgiYYcsZM9MkjnbzNmfP4ZogGyTXL/rPud3Pu/Xyxe+MP6ue2Yy53zPvVx34OWRV9cEAAAAaoKuBwAAAOA3BCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlBCwAAABlYdcD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EAD8qtKdHrhMfsUa10MB4LG63OQOAADQyAhYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyghYAAAAyv4/HTat3zolR/MAAAAASUVORK5CYII=";
+const PLANTILLAS_BASE={
+recordatorio:`Reciba un cordial y afectuoso saludo de parte de {{ENTIDAD}}. Para nosotros es un gusto contar con usted como parte de nuestra familia de representantes.
+Le escribimos para recordarle, de la manera más atenta, que su cuenta registra un saldo pendiente de {{MONEDA}} {{MONTO}}, correspondiente a la campaña {{CAMPANA}}, cuya fecha de pago ya transcurrió.
+Sabemos que, entre tantas ocupaciones, a veces una fecha puede pasar desapercibida. Por ello, le invitamos a regularizar su saldo a la brevedad posible y así mantener su cuenta activa y al día.
+Si usted ya realizó su pago, le agradecemos hacer caso omiso al presente recordatorio. Agradecemos su atención y la confianza que deposita en nosotros.`,
+requerimiento:`Estimada(o) Representante:
+Por medio de la presente, {{ENTIDAD}} le informa que su cuenta mantiene un saldo vencido de {{MONEDA}} {{MONTO}}, correspondiente a la campaña {{CAMPANA}}, el cual no ha sido regularizado dentro de los plazos establecidos.
+Le requerimos formalmente efectuar la cancelación total de dicho saldo en un plazo no mayor a {{PLAZO}} días hábiles, contados a partir de la recepción de esta comunicación, a fin de evitar la restricción de su cuenta y la suspensión de futuros pedidos.
+Puede realizar su pago a través de {{CANALES_PAGO}}, indicando como referencia su código de representante {{CODIGO}}.
+Confiamos en su pronta respuesta para resolver esta situación de manera favorable.`,
+escalamiento:`Estimada(o) Representante:
+Pese a las comunicaciones anteriores, su cuenta continúa presentando un saldo vencido de {{MONEDA}} {{MONTO}}, correspondiente a la campaña {{CAMPANA}}, sin que a la fecha se haya recibido su pago.
+Le notificamos que, de no regularizar su saldo en un plazo máximo de {{PLAZO}} días hábiles, su cuenta será trasladada a la etapa final de gestión administrativa, desde la cual se emite la notificación prejurídica correspondiente.
+Le exhortamos a comunicarse de inmediato con nuestro equipo de cobros para evitar mayores consecuencias y encontrar juntos una solución.`,
+prejuridica:`Estimada(o) Representante:
+Por este medio, {{ENTIDAD}} le notifica formalmente que mantiene un saldo vencido de {{MONEDA}} {{MONTO}}, correspondiente a la campaña {{CAMPANA}}, conforme al contrato de compraventa suscrito y a las facturas emitidas a su nombre.
+Habiéndose agotado las gestiones administrativas de cobro sin obtener respuesta de su parte, le comunicamos que la presente constituye su última oportunidad para resolver el saldo por la vía administrativa.
+De no recibir su pago, o una comunicación formal de su parte, en un plazo máximo de {{PLAZO}} días hábiles, su cuenta será trasladada al departamento legal para iniciar las acciones de cobro que correspondan, con los gastos adicionales que ello pudiera implicar.
+Le instamos a regularizar su situación de manera inmediata y evitar así dichas consecuencias.`,
+finiquito:`A quien interese:
+Por medio de la presente, {{ENTIDAD}} hace constar que la señora(or) {{NOMBRE}}, con documento de identificación {{DOCUMENTO}} y código de representante {{CODIGO}}, ha cancelado en su totalidad el saldo que mantenía con esta empresa.
+En virtud de lo anterior, se extiende el presente finiquito, dejando constancia de que, a la fecha, la representante no mantiene ninguna obligación de pago pendiente con {{ENTIDAD}}.
+Y para los usos que a la interesada convengan, se extiende la presente en la ciudad de {{CIUDAD}}, el {{FECHA}}.`,
+aldia:`A quien corresponda:
+{{ENTIDAD}} hace constar que la señora(or) {{NOMBRE}}, con documento de identificación {{DOCUMENTO}} y código de representante {{CODIGO}}, mantiene su cuenta al día, sin saldos vencidos a la fecha de emisión de la presente constancia.
+Esta constancia se extiende a solicitud de la interesada, para los fines que estime convenientes.
+La presente constancia tiene una vigencia de treinta (30) días calendario, contados a partir de su fecha de emisión.
+Se extiende en la ciudad de {{CIUDAD}}, el {{FECHA}}.`,
+saldo:`A quien corresponda:
+{{ENTIDAD}} hace constar que la señora(or) {{NOMBRE}}, con código de representante {{CODIGO}} y zona {{ZONA}}, mantiene a la fecha un saldo pendiente de pago de {{MONEDA}} {{MONTO}}, correspondiente a la campaña {{CAMPANA}}.
+El presente documento se extiende para que la representante pueda efectuar el pago correspondiente a través de {{CANALES_PAGO}}, indicando como referencia su código de representante {{CODIGO}}.
+Se extiende en la ciudad de {{CIUDAD}}, el {{FECHA}}.`
+};
+function getPlantilla(k){return (STATE.plantillas&&STATE.plantillas[k]!=null)?STATE.plantillas[k]:PLANTILLAS_BASE[k];}
+function fillTokens(texto,c){
+  return texto
+    .replace(/\{\{MONEDA\}\}\s*\{\{MONTO\}\}/g,`<b style="color:#000">${c.moneda} ${c.monto}</b>`)
+    .replace(/\{\{MONTO\}\}/g,`<b style="color:#000">${c.monto}</b>`)
+    .replace(/\{\{MONEDA\}\}/g,c.moneda)
+    .replace(/\{\{NOMBRE\}\}/g,`<b>${c.nombre}</b>`)
+    .replace(/\{\{CODIGO\}\}/g,c.cod).replace(/\{\{ZONA\}\}/g,c.zona)
+    .replace(/\{\{CAMPANA\}\}/g,c.camp).replace(/\{\{ENTIDAD\}\}/g,c.entidad)
+    .replace(/\{\{CIUDAD\}\}/g,c.ciudad).replace(/\{\{FECHA\}\}/g,c.fecha)
+    .replace(/\{\{DOCUMENTO\}\}/g,c.doc).replace(/\{\{PLAZO\}\}/g,c.plazo)
+    .replace(/\{\{TELEFONO\}\}/g,c.tel).replace(/\{\{CANALES_PAGO\}\}/g,c.canales);
+}
+function correlativo(rep,num){return num||`${rep.pais}-2026-0${100+(parseInt(rep.cod.slice(-3))%200)}`;}
+function letterHTML(rep,tipo,num){
+  const p=PAISES[rep.pais];
+  const ctx={moneda:p.moneda,monto:rep.balance.toLocaleString('es-GT',{minimumFractionDigits:2,maximumFractionDigits:2}),
+    nombre:rep.nombre,cod:rep.cod,zona:rep.zona,camp:rep.camp,entidad:p.entidad,ciudad:p.ciudad,
+    fecha:'27 de junio de 2026',doc:rep.cedula,tel:'+502 0000-0000',canales:'banco o entidad autorizada',
+    plazo:(tipo==='cobro'&&variantePorPD(rep.inact).id==='requerimiento')?'5':'3'};
+  let key,titulo=null,asunto=null,destinatario=true;
+  if(tipo==='cobro'){const v=variantePorPD(rep.inact);key=v.id;asunto=v.nombre;}
+  else{key=tipo;destinatario=false;titulo={finiquito:'FINIQUITO Y CONSTANCIA DE NO ADEUDO',aldia:'CONSTANCIA DE CUENTA AL DÍA',saldo:'CONSTANCIA DE SALDO PENDIENTE'}[tipo];}
+  const parrafos=fillTokens(getPlantilla(key),ctx).split('\n').filter(s=>s.trim()).map(t=>`<p>${t}</p>`).join('');
+  const firmante=(STATE.role&&STATE.role.id==='super')?STATE.role.user:'Daniel Monge';
+  const cargo=(STATE.role&&STATE.role.id==='super')?STATE.role.nombre:'Supervisor de Cobros';
+  const elaborado=(STATE.role&&STATE.role.id==='gestor')?iniciales(STATE.role.user):iniciales(firmante);
+  const ref=`${p.cod}.102.${rep.zona}.${rep.cod}.${(parseInt(rep.cod.slice(-4))%90000+10000)}`;
+  return frame({titulo,fecha:`${p.ciudad}, ${ctx.fecha}.`,asunto,destinatario,rep,parrafos,
+    firmante,cargo,entidad:p.entidad,numC:correlativo(rep,num),ref,elaborado});
+}
+function frame(o){
+  return `<div class="letter-frame">
+    <div style="text-align:right;margin-bottom:8px"><img src="${AVON_LOGO}" style="height:46px;display:inline-block"></div>
+    <div style="border-bottom:2.5px solid #DA1884;margin-bottom:22px"></div>
+    ${o.titulo?`<div class="lf-title">${o.titulo}</div>`:''}
+    <div class="lf-date">${o.fecha}</div>
+    ${o.destinatario?`<div style="margin-bottom:16px">Señora(or): <b>${o.rep.nombre}</b><br>Código de representante: ${o.rep.cod} &nbsp;&nbsp; Zona: ${o.rep.zona}<br>Presente.</div>`:''}
+    ${o.asunto?`<p style="margin-bottom:14px"><b>Asunto: ${o.asunto}</b></p>`:''}
+    ${o.parrafos}
+    <div class="lf-sign"><p>Atentamente,</p>
+      ${(STATE.firmas&&STATE.firmas[o.firmante])?`<img src="${STATE.firmas[o.firmante]}" style="height:46px;margin:4px 0 -4px;display:block">`:''}
+      <div class="lf-sline"></div>
+      <p class="nm">${o.firmante}</p><p>${o.cargo}</p><p>${o.entidad}</p>
+      <p style="color:#777;font-style:italic;font-size:10px;margin-top:6px">Sello de la empresa</p></div>
+    <div class="lf-foot">Carta N°: <b style="color:#444">${o.numC}</b> &nbsp;|&nbsp; Elaborado por: ${o.elaborado} &nbsp;|&nbsp; Ref. archivo: ${o.ref}</div>
+  </div>`;
+}
+function preview(cod){
+  const rep=REPS.find(r=>r.cod===cod), tipo=STATE.tipo, p=PAISES[rep.pais];
+  const variante=tipo==='cobro'?variantePorPD(rep.inact):null;
+  document.getElementById('modal').innerHTML=`
+    <div class="modal-h">${svg(ICO.letter,18)}<div><h3>Vista previa de carta</h3></div>
+      <div class="x" onclick="closeModal()">${svg(ICO.x,16)}</div></div>
+    <div class="modal-body">
+      ${letterHTML(rep,tipo)}
+      <div class="preview-side">
+        <div class="ps-sec"><div class="psl">Documento</div>
+          <div class="ps-row"><span class="k">Tipo</span><span class="v">${TIPOS[tipo].nombre}</span></div>
+          ${variante?`<div class="ps-row"><span class="k">Variante</span><span class="v">${variante.nombre}</span></div>
+          <div class="ps-row"><span class="k">Tono</span><span class="v">${variante.tono}</span></div>`:''}
+          <div class="ps-row"><span class="k">País</span><span class="v">${p.nombre}</span></div>
+        </div>
+        <div class="ps-sec"><div class="psl">Representante</div>
+          <div class="ps-row"><span class="k">Código</span><span class="v">${rep.cod}</span></div>
+          <div class="ps-row"><span class="k">Zona</span><span class="v">${rep.zona}</span></div>
+          <div class="ps-row"><span class="k">Mora</span><span class="v">${rep.estatus}·PD${rep.inact}</span></div>
+          <div class="ps-row"><span class="k">Balance</span><span class="v">${money(p.moneda,rep.balance)}</span></div>
+        </div>
+        <div class="ps-sec"><div class="psl">Emisión</div>
+          <div class="ps-row"><span class="k">Ciudad</span><span class="v">${p.ciudad}</span></div>
+          <div class="ps-row"><span class="k">Firma</span><span class="v">Daniel Monge</span></div>
+        </div>
+        <button class="btn primary" style="width:100%;justify-content:center" onclick="closeModal();toast('ok','Carta enviada a autorización')">${svg(ICO.send)} Solicitar emisión</button>
+      </div>
+    </div>`;
+  document.getElementById('overlay').classList.add('show');
+}
+function closeModal(){document.getElementById('overlay').classList.remove('show');}
+
+/* ---------- generación por lotes ---------- */
+function generarLote(){
+  const n=STATE.sel.size;
+  document.getElementById('modal').innerHTML=`<div class="gen-prog">
+    <div class="gen-ring"><svg width="90" height="90"><circle cx="45" cy="45" r="38" stroke="rgba(255,255,255,.1)" stroke-width="6" fill="none"/>
+      <circle id="ring" cx="45" cy="45" r="38" stroke="url(#g)" stroke-width="6" fill="none" stroke-linecap="round" stroke-dasharray="239" stroke-dashoffset="239"/>
+      <defs><linearGradient id="g"><stop offset="0" stop-color="#2DD4BF"/><stop offset="1" stop-color="#38BDF8"/></linearGradient></defs></svg>
+      <div class="pct" id="pct">0%</div></div>
+    <h3>Generando ${n} cartas</h3><p id="genmsg">Validando y numerando…</p></div>`;
+  document.getElementById('overlay').classList.add('show');
+  let i=0; const ring=document.getElementById('ring');
+  const tick=setInterval(()=>{
+    i++; const pct=Math.round((i/n)*100);
+    document.getElementById('pct').textContent=pct+'%';
+    document.getElementById('genmsg').textContent=`Carta ${i} de ${n} · numerada y firmada`;
+    ring.style.strokeDashoffset=239-(239*pct/100);
+    if(i>=n){clearInterval(tick);setTimeout(()=>{closeModal();STATE.sel.clear();
+      toast('ok',`${n} cartas generadas y enviadas a autorización`);go('auth');},500);}
+  },Math.max(120,700/n));
+}
+
+/* ============ AUTORIZACIÓN ============ */
+function viewAuth(){
+  if(STATE.role.id==='gestor'){document.getElementById('view').innerHTML=
+    `<div class="empty glass" style="padding:70px">${svg(ICO.shield,46)}<h3>Solo supervisión</h3><p>La autorización está reservada a quienes tienen rango de firma.</p></div>`;return;}
+  const pend=REPS.slice(0,4).map((r,i)=>{
+    const p=PAISES[r.pais], v=variantePorPD(r.inact);
+    return {rep:r,p,v,num:`${r.pais}-2026-0${148+i}`};
+  });
+  const tieneFirma=!!STATE.firmas[STATE.role.user];
+  document.getElementById('view').innerHTML=`
+  <div class="toolbar">
+    ${!tieneFirma?`<div style="flex:1;padding:11px 16px;border-radius:12px;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.22);font-size:12.5px;color:var(--warn);display:flex;align-items:center;gap:9px">
+      ${svg(ICO.bell,15)} Aún no has cargado tu firma · al aprobar se usará tu firma registrada. <span style="text-decoration:underline;cursor:pointer" onclick="go('firma')">Cargar firma</span></div>`
+    :`<div style="flex:1;font-size:12.5px;color:var(--txt-2);display:flex;align-items:center;gap:9px">${svg(ICO.check,15)} Firma de ${STATE.role.user.split(' ')[0]} lista · se estampará en cada carta aprobada.</div>`}
+    <button class="btn primary" onclick="approveAll()">${svg(ICO.all)} Autorizar todas (${pend.length})</button>
+  </div>
+  <div class="auth-grid">${pend.map(x=>`
+    <div class="auth-card glass" data-cod="${x.rep.cod}">
+      <div class="ah"><div class="lett-ico">${svg(ICO.letter,18)}</div><span class="num">${x.num}</span></div>
+      <h4>${x.v.nombre}</h4>
+      <div style="font-size:12.5px;color:var(--txt-2)">${x.rep.nombre}</div>
+      <div class="meta-row">
+        <span class="mtag">${x.p.nombre}</span>
+        <span class="mtag">${money(x.p.moneda,x.rep.balance)}</span>
+        <span class="mtag">${x.rep.estatus}·PD${x.rep.inact}</span>
+      </div>
+      <div class="auth-actions">
+        <button class="btn sm ok" onclick="approve(this,'${x.num}')">${svg(ICO.check,15)} Aprobar</button>
+        <button class="btn sm ghost" style="flex:0 0 auto" onclick="showLetter('${x.rep.cod}','cobro')">Ver</button>
+        <button class="btn sm no" onclick="reject(this)">${svg(ICO.x,15)}</button>
+      </div>
+    </div>`).join('')}</div>`;
+}
+function approveAll(){
+  const cards=[...document.querySelectorAll('.auth-card')];
+  if(!cards.length){toast('info','No hay cartas pendientes');return;}
+  cards.forEach((c,i)=>setTimeout(()=>{
+    c.style.transition='.4s';c.style.opacity='0';c.style.transform='scale(.96)';
+    setTimeout(()=>{c.remove();
+      if(!document.querySelector('.auth-card'))document.getElementById('view').innerHTML=
+        `<div class="empty glass" style="padding:70px">${svg(ICO.check,46)}<h3>Todo al día</h3><p>No hay cartas pendientes de autorización.</p></div>`;
+    },400);
+  },i*140));
+  setTimeout(()=>toast('ok',`${cards.length} cartas autorizadas y firmadas`),cards.length*140+200);
+}
+function approve(btn,num){btn.closest('.auth-card').style.transition='.4s';btn.closest('.auth-card').style.opacity='0';
+  btn.closest('.auth-card').style.transform='scale(.96)';
+  setTimeout(()=>{btn.closest('.auth-card').remove();toast('ok',`${num} aprobada y firmada`);
+    if(!document.querySelector('.auth-card'))document.getElementById('view').innerHTML=
+      `<div class="empty glass" style="padding:70px">${svg(ICO.check,46)}<h3>Todo al día</h3><p>No hay cartas pendientes de autorización.</p></div>`;},400);}
+function reject(btn){btn.closest('.auth-card').style.opacity='0';setTimeout(()=>{btn.closest('.auth-card').remove();toast('info','Carta rechazada con motivo');},400);}
+
+/* ============ HISTORIAL ============ */
+function tipoLabel(rep,tipo){
+  if(tipo==='cobro'){const v=variantePorPD(rep.inact);return 'Cobro · '+v.nombre.split(' ')[0];}
+  return TIPOS[tipo].nombre;
+}
+function fmtFecha(f){const[y,m,d]=f.split('-');return `${d}/${m}/${y}`;}
+let HF={desde:'',hasta:'',gestor:'todos'};
+function viewHist(){
+  const isSuper=STATE.role.id==='super';
+  let lista = isSuper ? CARTAS.slice() : CARTAS.filter(c=>c.gestor===STATE.role.user);
+  if(HF.desde) lista=lista.filter(c=>c.fecha>=HF.desde);
+  if(HF.hasta) lista=lista.filter(c=>c.fecha<=HF.hasta);
+  if(isSuper&&HF.gestor!=='todos') lista=lista.filter(c=>c.gestor===HF.gestor);
+  document.getElementById('view').innerHTML=`
+  <div class="toolbar">
+    <div class="field"><label>Desde</label><input type="date" class="input" style="min-width:150px" value="${HF.desde}" onchange="HF.desde=this.value;viewHist()"></div>
+    <div class="field"><label>Hasta</label><input type="date" class="input" style="min-width:150px" value="${HF.hasta}" onchange="HF.hasta=this.value;viewHist()"></div>
+    ${isSuper?`<div class="field"><label>Gestor</label><select class="select" onchange="HF.gestor=this.value;viewHist()"><option value="todos">Todos</option>${GESTORES.map(g=>`<option ${HF.gestor===g.nombre?'selected':''}>${g.nombre.split(' ').slice(0,3).join(' ')}</option>`).join('')}</select></div>`:''}
+    <div style="flex:1"></div>
+    <div class="field"><label>&nbsp;</label><button class="btn primary" onclick="descargarZip(${lista.filter(c=>c.entrega!=='emitida').length})">${svg(ICO.down)} Descargar lote (ZIP)</button></div>
+    <div class="field"><label>&nbsp;</label><button class="btn ghost" onclick="toast('ok','Exportado a Excel')">${svg(ICO.down)} Excel</button></div>
+  </div>
+  <div class="tbl-wrap glass"><table>
+    <thead><tr><th>N° de carta</th><th>Tipo</th><th>Representante</th><th>Fecha</th>${isSuper?'<th>Gestor</th>':''}<th>Estado de entrega</th><th></th></tr></thead>
+    <tbody>${lista.length?lista.map(c=>{const rep=REPS.find(r=>r.cod===c.cod),p=PAISES[rep.pais],e=ENT[c.entrega];
+      return `<tr>
+      <td><span style="font-family:'JetBrains Mono';font-size:12px;color:var(--txt-2)">${c.num}</span></td>
+      <td style="font-weight:500">${tipoLabel(rep,c.tipo)}</td>
+      <td>${rep.nombre.split(' ').slice(0,3).join(' ')} <span class="fc" style="font-family:'JetBrains Mono';font-size:10px;padding:1px 5px;border-radius:4px;background:rgba(255,255,255,.06);margin-left:4px">${rep.pais}</span></td>
+      <td><span style="font-family:'JetBrains Mono';font-size:12px;color:var(--txt-3)">${fmtFecha(c.fecha)}</span></td>
+      ${isSuper?`<td><span style="font-size:12px;color:var(--txt-2)">${c.gestor.split(' ')[0]} ${c.gestor.split(' ')[2]?c.gestor.split(' ')[2][0]+'.':''}</span></td>`:''}
+      <td><span class="st ${e.st}"><i></i>${e.lab}</span>${c.canal?`<span class="mtag" style="margin-left:7px">${CANALES[c.canal]}</span>`:''}</td>
+      <td style="text-align:right">${accionEntrega(c,isSuper)}</td>
+    </tr>`;}).join(''):`<tr><td colspan="${isSuper?7:6}" style="text-align:center;padding:36px;color:var(--txt-3)">No hay cartas en este rango</td></tr>`}</tbody>
+  </table></div>`;
+}
+function accionEntrega(c,isSuper){
+  const ver=`<button class="btn ghost sm" style="padding:6px 11px" onclick="showLetter('${c.cod}','${c.tipo}','${c.num}')">Ver</button>`;
+  const evid=c.evid?`<button class="btn ghost sm" style="padding:6px 11px;color:var(--ok)" onclick="toast('info','Evidencia: ${CANALES[c.canal]} · entregada a la representante')">Evidencia</button>`:'';
+  if(isSuper) return `<div style="display:flex;gap:6px;justify-content:flex-end">${evid}${ver}</div>`;
+  let acc='';
+  if(c.entrega==='emitida') acc=`<button class="btn ghost sm" style="padding:6px 11px;color:var(--warn)" onclick="avanzaEntrega('${c.num}','enviada_gerente')">${svg(ICO.send,13)} Enviar a gerente</button>`;
+  else if(c.entrega==='enviada_gerente') acc=`<button class="btn primary sm" style="padding:6px 11px" onclick="modalEntrega('${c.num}')">${svg(ICO.upload,13)} Registrar entrega</button>`;
+  else if(c.entrega==='entregada') acc=`<button class="btn sm ok" style="padding:6px 11px;flex:0" onclick="avanzaEntrega('${c.num}','respondida')">${svg(ICO.check,13)} Con respuesta</button>`;
+  return `<div style="display:flex;gap:6px;justify-content:flex-end">${evid}${acc}${ver}</div>`;
+}
+function avanzaEntrega(num,nuevo){
+  const c=CARTAS.find(x=>x.num===num); c.entrega=nuevo;
+  toast('ok', nuevo==='enviada_gerente'?'Marcada como enviada a la gerente de zona':'Marcada con respuesta de la representante');
+  viewHist();
+}
+/* modal de entrega: evidencia OBLIGATORIA + canal */
+let entregaTmp={num:null,canal:'whatsapp',file:false};
+function modalEntrega(num){
+  entregaTmp={num,canal:'whatsapp',file:false};
+  document.getElementById('modal').innerHTML=`
+    <div class="modal-h">${svg(ICO.send,18)}<div><h3>Registrar entrega a la representante</h3></div>
+      <div class="x" onclick="closeModal()">${svg(ICO.x,16)}</div></div>
+    <div class="modal-body" style="display:block;max-width:480px">
+      <p style="font-size:13px;color:var(--txt-2);line-height:1.6;margin-bottom:18px">Confirma que la carta <b>${num}</b> fue entregada directamente a la representante (cliente final). La evidencia es <b>obligatoria</b>.</p>
+      <div class="field" style="margin-bottom:16px"><label>Canal de entrega</label>
+        <select class="select" style="width:100%;min-width:0" onchange="entregaTmp.canal=this.value">
+          ${Object.entries(CANALES).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></div>
+      <div class="field" style="margin-bottom:8px"><label>Evidencia de entrega (obligatoria)</label></div>
+      <label class="drop glass" id="evidDrop" style="display:block;cursor:pointer;padding:26px">
+        <input type="file" accept="image/*,.pdf" style="display:none" onchange="onEvid(event)">
+        <div class="di" style="width:46px;height:46px;margin-bottom:12px">${svg(ICO.upload,22)}</div>
+        <h3 style="font-size:14px" id="evidTitle">Adjuntar foto, captura o PDF</h3>
+        <p style="font-size:12px">La misma carta confirmada, captura de WhatsApp, correo, etc.</p>
+      </label>
+      <div style="display:flex;gap:10px;margin-top:22px">
+        <button class="btn ghost" style="flex:1;justify-content:center" onclick="closeModal()">Cancelar</button>
+        <button class="btn primary" id="btnEntrega" disabled style="flex:1;justify-content:center" onclick="confirmEntrega()">${svg(ICO.check)} Confirmar entrega</button>
+      </div>
+    </div>`;
+  document.getElementById('overlay').classList.add('show');
+}
+function onEvid(e){
+  if(!e.target.files[0])return;
+  entregaTmp.file=true;
+  document.getElementById('evidTitle').textContent='✓ '+e.target.files[0].name.slice(0,32);
+  document.getElementById('evidDrop').style.borderColor='var(--ok)';
+  document.getElementById('btnEntrega').disabled=false;
+}
+function confirmEntrega(){
+  if(!entregaTmp.file){toast('info','Adjunta la evidencia primero');return;}
+  const c=CARTAS.find(x=>x.num===entregaTmp.num);
+  c.entrega='entregada'; c.canal=entregaTmp.canal; c.evid=true;
+  closeModal(); toast('ok',`Entrega registrada · ${CANALES[entregaTmp.canal]} · con evidencia`);
+  viewHist();
+}
+function descargarZip(n){
+  if(!n){toast('info','No hay cartas listas para descargar');return;}
+  document.getElementById('modal').innerHTML=`<div class="gen-prog">
+    <div class="gen-ring"><svg width="90" height="90"><circle cx="45" cy="45" r="38" stroke="rgba(255,255,255,.1)" stroke-width="6" fill="none"/>
+      <circle id="zring" cx="45" cy="45" r="38" stroke="url(#gz)" stroke-width="6" fill="none" stroke-linecap="round" stroke-dasharray="239" stroke-dashoffset="239"/>
+      <defs><linearGradient id="gz"><stop offset="0" stop-color="#2DD4BF"/><stop offset="1" stop-color="#38BDF8"/></linearGradient></defs></svg>
+      <div class="pct" id="zpct">0%</div></div>
+    <h3>Empaquetando ${n} cartas</h3><p id="zmsg">Generando PDFs…</p></div>`;
+  document.getElementById('overlay').classList.add('show');
+  let i=0; const ring=document.getElementById('zring');
+  const tick=setInterval(()=>{
+    i++; const pct=Math.round((i/n)*100);
+    document.getElementById('zpct').textContent=pct+'%';
+    document.getElementById('zmsg').textContent=`PDF ${i} de ${n} · agregado al ZIP`;
+    ring.style.strokeDashoffset=239-(239*pct/100);
+    if(i>=n){clearInterval(tick);setTimeout(()=>{closeModal();
+      toast('ok',`ZIP descargado · ${n} cartas en un solo archivo`);},500);}
+  },Math.max(140,800/n));
+}
+
+/* ============ VISOR DE CARTA ============ */
+function showLetter(cod,tipo,num){
+  const rep=REPS.find(r=>r.cod===cod); if(!rep){toast('info','Carta no disponible');return;}
+  const p=PAISES[rep.pais], variante=tipo==='cobro'?variantePorPD(rep.inact):null;
+  document.getElementById('modal').innerHTML=`
+    <div class="modal-h">${svg(ICO.letter,18)}<div><h3>${TIPOS[tipo].nombre}${variante?' · '+variante.nombre:''}</h3></div>
+      <div class="x" onclick="closeModal()">${svg(ICO.x,16)}</div></div>
+    <div class="modal-body">
+      ${letterHTML(rep,tipo,num)}
+      <div class="preview-side">
+        <div class="ps-sec"><div class="psl">Representante</div>
+          <div class="ps-row"><span class="k">Código</span><span class="v">${rep.cod}</span></div>
+          <div class="ps-row"><span class="k">Zona</span><span class="v">${rep.zona}</span></div>
+          <div class="ps-row"><span class="k">País</span><span class="v">${p.nombre}</span></div>
+          <div class="ps-row"><span class="k">Balance</span><span class="v">${money(p.moneda,rep.balance)}</span></div>
+        </div>
+        <div class="ps-sec"><div class="psl">Emisión</div>
+          <div class="ps-row"><span class="k">Ciudad</span><span class="v" style="font-size:10.5px">${p.ciudad}</span></div>
+          <div class="ps-row"><span class="k">Firma</span><span class="v" style="font-size:10.5px">${(STATE.role&&STATE.role.id==='super')?STATE.role.user.split(' ')[0]:'Daniel'}</span></div>
+        </div>
+        <button class="btn primary" style="width:100%;justify-content:center" onclick="toast('ok','Descargando PDF…')">${svg(ICO.down)} Descargar PDF</button>
+        <button class="btn ghost" style="width:100%;justify-content:center;margin-top:9px" onclick="closeModal()">Cerrar</button>
+      </div>
+    </div>`;
+  document.getElementById('overlay').classList.add('show');
+}
+
+/* ============ MI FIRMA (supervisión) ============ */
+function viewFirma(){
+  const yo=STATE.role.user, mine=STATE.firmas[yo];
+  document.getElementById('view').innerHTML=`
+  <div class="grid-2">
+    <div class="panel glass">
+      <div class="panel-h"><h3>Tu firma</h3><span class="hint">${yo}</span></div>
+      <p style="font-size:13px;color:var(--txt-2);line-height:1.65;margin-bottom:18px">Carga una imagen de tu firma (PNG con fondo transparente, idealmente). Se aplicará automáticamente a <b>todas las cartas que autorices</b>, junto con tu nombre y la razón social del país.</p>
+      <label class="drop glass" style="display:block;cursor:pointer;padding:34px">
+        <input type="file" accept="image/*" style="display:none" onchange="onFirma(event)">
+        <div class="di">${svg(ICO.sign,28)}</div>
+        <h3 style="font-size:16px">${mine?'Reemplazar firma':'Subir mi firma'}</h3>
+        <p>PNG o JPG · haz clic para seleccionar</p>
+      </label>
+    </div>
+    <div class="panel glass">
+      <div class="panel-h"><h3>Vista previa en la carta</h3></div>
+      <div style="background:#fff;border-radius:12px;padding:26px 30px;color:#1a1a1a;font-family:Arial">
+        <p style="margin-bottom:4px">Atentamente,</p>
+        ${mine?`<img src="${mine}" style="height:52px;margin:4px 0;display:block">`:'<div style="height:52px"></div>'}
+        <div style="width:160px;border-top:1px solid #000;margin:2px 0 5px"></div>
+        <div style="font-weight:700;font-size:13px">${yo}</div>
+        <div style="font-size:11.5px">${STATE.role.nombre}</div>
+        <div style="font-size:11.5px">Productos Avon, S.A.</div>
+      </div>
+      ${mine?`<div class="pill ok" style="margin-top:16px">${svg(ICO.check,12)} Firma cargada y activa</div>`:`<div class="pill warn" style="margin-top:16px">${svg(ICO.bell,12)} Sin firma cargada</div>`}
+    </div>
+  </div>
+  <div class="panel glass" style="margin-top:14px">
+    <div class="panel-h"><h3>Firmas del equipo</h3><span class="hint">Rango de firma · Cobros Venta Directa</span></div>
+    ${SUPERVISION.map(s=>`<div class="type-row"><span class="tn" style="display:flex;align-items:center;gap:10px">
+      <div class="avatar" style="width:30px;height:30px;border-radius:8px;font-size:11px;background:var(--accent-v)">${iniciales(s.nombre)}</div>
+      ${s.nombre} <span style="color:var(--txt-3);font-size:11px">· ${s.cargo}</span></span>
+      <span class="st ${STATE.firmas[s.nombre]?'sent':'pend'}"><i></i>${STATE.firmas[s.nombre]?'Firma cargada':'Pendiente'}</span></div>`).join('')}
+  </div>`;
+}
+function onFirma(e){
+  const f=e.target.files[0]; if(!f)return;
+  const r=new FileReader();
+  r.onload=()=>{STATE.firmas[STATE.role.user]=r.result;toast('ok','Firma cargada · se aplicará a tus cartas');viewFirma();};
+  r.readAsDataURL(f);
+}
+
+/* ============ RECOPILACIÓN (gestor) ============ */
+function cortesBanner(){
+  const h=new Date().getHours();
+  const next=h<12?'12:00':(h<17?'17:00':'mañana 12:00');
+  return `<div class="glass" style="padding:14px 20px;border-radius:var(--r);margin-bottom:14px;display:flex;align-items:center;gap:14px;border-color:rgba(251,191,36,.22)">
+    <div style="width:36px;height:36px;border-radius:10px;background:rgba(251,191,36,.14);border:1px solid rgba(251,191,36,.25);display:grid;place-items:center;color:var(--warn)">${svg(ICO.bell,18)}</div>
+    <div style="flex:1"><div style="font-weight:600;font-size:13.5px">Cortes de recopilación · 12:00 y 17:00</div>
+      <div style="font-size:12px;color:var(--txt-3)">Próximo corte: <b style="color:var(--warn)">${next}</b> · sube tu plantilla a tiempo</div></div>
+    <button class="btn ghost sm" onclick="go('recop')">Ir a recopilación</button>
+  </div>`;
+}
+function viewRecop(){
+  const h=new Date().getHours();
+  const corte=(hora,lab,done)=>`<div class="type-row"><span class="tn" style="display:flex;align-items:center;gap:10px">
+    <div style="width:34px;height:34px;border-radius:9px;background:var(--glass-2);border:1px solid var(--stroke);display:grid;place-items:center;font-family:'JetBrains Mono';font-size:11px;color:var(--teal)">${hora.split(':')[0]}h</div>
+    <div><div style="font-weight:600">${lab}</div><div style="font-size:11px;color:var(--txt-3)">${hora}</div></div></span>
+    <span class="st ${done?'sent':'pend'}"><i></i>${done?'Cumplido':'Programado'}</span></div>`;
+  document.getElementById('view').innerHTML=`
+  <div class="grid-2">
+    <div class="panel glass">
+      <div class="panel-h"><h3>Plantilla de recopilación</h3>
+        ${STATE.recopSubida?`<span class="pill ok">${svg(ICO.check,12)} Enviada</span>`:`<span class="pill warn">${svg(ICO.bell,12)} Pendiente</span>`}</div>
+      <p style="font-size:13px;color:var(--txt-2);line-height:1.65;margin-bottom:18px">Descarga la plantilla, coloca los <b>códigos</b> de tus representantes y el <b>país</b> (respeta las mayúsculas). Súbela en tu corte y entrará automáticamente al <b>consolidado</b> de Supervisión.</p>
+      <div style="display:flex;gap:10px">
+        <button class="btn ghost" onclick="downloadPlantilla()">${svg(ICO.down)} Descargar plantilla</button>
+        <label class="btn primary" style="cursor:pointer">
+          <input type="file" accept=".csv" style="display:none" onchange="subirRecop(event)">
+          ${svg(ICO.upload)} Subir mi plantilla</label>
+      </div>
+      <div style="margin-top:18px;padding:14px;border-radius:12px;background:rgba(255,255,255,.03);border:1px solid var(--stroke);font-family:'JetBrains Mono';font-size:12px;color:var(--txt-2);line-height:1.7">
+        Codigo,Pais<br>1210802,Guatemala<br>2098771,El Salvador<br><span style="color:var(--txt-3)">…</span>
+      </div>
+    </div>
+    <div class="panel glass">
+      <div class="panel-h"><h3>Cortes de hoy</h3><span class="hint">Recopilación dos veces al día</span></div>
+      ${corte('12:00','Corte de mediodía',h>=12)}
+      ${corte('17:00','Corte de las 5:00 p.m.',h>=17)}
+      <div style="margin-top:14px;padding:13px;border-radius:12px;background:rgba(56,189,248,.06);border:1px solid rgba(56,189,248,.16);font-size:12.5px;color:var(--txt-2);line-height:1.55">
+        ${svg(ICO.bell,14)} Recibirás una alerta en cada corte para subir tu recopilación a tiempo.
+      </div>
+    </div>
+  </div>`;
+}
+function downloadPlantilla(){
+  const csv='Codigo,Pais\n,\n,\n';
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download='plantilla_recopilacion.csv';a.click();
+  toast('ok','Plantilla descargada');
+}
+function subirRecop(e){
+  if(!e.target.files[0])return;
+  STATE.recopSubida=true;
+  toast('ok','Plantilla enviada al consolidado de Supervisión');
+  viewRecop();
+}
+
+/* ============ PERFIL ============ */
+function metricasGestor(nombre){
+  const cs=CARTAS.filter(c=>c.gestor===nombre);
+  return {emit:cs.length,
+    gerente:cs.filter(c=>['enviada_gerente','entregada','respondida'].includes(c.entrega)).length,
+    entreg:cs.filter(c=>['entregada','respondida'].includes(c.entrega)).length,
+    resp:cs.filter(c=>c.entrega==='respondida').length,
+    evid:cs.filter(c=>c.evid).length};
+}
+function viewPerfil(){
+  const isG=STATE.role.id==='gestor', yo=STATE.role.user;
+  const head=`<div class="panel glass" style="margin-bottom:14px;display:flex;align-items:center;gap:18px">
+    <div class="avatar" style="width:62px;height:62px;border-radius:16px;font-size:22px;background:${isG?'linear-gradient(135deg,#2DD4BF,#38BDF8)':'var(--accent-v)'}">${STATE.role.av}</div>
+    <div style="flex:1"><div style="font-family:'Space Grotesk';font-weight:700;font-size:22px;letter-spacing:-.4px">${yo}</div>
+      <div style="font-size:13px;color:var(--txt-2);margin-top:3px">${STATE.role.nombre} · Cobros Venta Directa</div>
+      ${isG?`<div style="font-size:12px;color:var(--txt-3);margin-top:4px;font-family:'JetBrains Mono'">Código ${STATE.role.cod||'—'} · acceso Avon${STATE.role.cod||''}</div>`:`<div style="font-size:12px;color:var(--txt-3);margin-top:4px">Rango de firma · autoriza y administra</div>`}</div>
+    ${STATE.delegado===yo?`<span class="pill warn">${svg(ICO.bolt,12)} Carga delegada a ti</span>`:''}
+  </div>`;
+  const kpi=(lab,val,meta,ic,col)=>`<div class="kpi glass">
+    <div class="lab"><div class="ic" style="color:${col}">${svg(ic,15)}</div>${lab}</div>
+    <div class="val">${val}</div><div class="meta">${meta}</div></div>`;
+  if(isG){
+    const m=metricasGestor(yo);
+    document.getElementById('view').innerHTML=cortesBanner()+head+`
+    <div class="kpis">
+      ${kpi('Cartas emitidas',m.emit,'en total',ICO.doc,'var(--teal)')}
+      ${kpi('Enviadas a gerente',m.gerente,'señal de envío',ICO.send,'var(--sky)')}
+      ${kpi('Entregadas a rep.',m.entreg,'con evidencia',ICO.check,'var(--ok)')}
+      ${kpi('Con respuesta',m.resp,'gestión cerrada',ICO.auth,'var(--warn)')}
+    </div>
+    <div class="grid-2">
+      <div class="panel glass"><div class="panel-h"><h3>Estado de mis cartas</h3><span class="hint">Cadena hacia la representante</span></div>
+        ${[['Emitidas',m.emit,'var(--txt-2)'],['Enviadas a la gerente',m.gerente,'var(--sky)'],['Entregadas a la representante',m.entreg,'var(--ok)'],['Con respuesta',m.resp,'var(--warn)']]
+          .map(([n,v,c])=>`<div class="type-row"><span class="tn">${n}</span><div class="tmeter"><i style="width:${m.emit?(v/m.emit)*100:0}%;background:${c}"></i></div><span class="tv">${v}</span></div>`).join('')}
+      </div>
+      <div class="panel glass"><div class="panel-h"><h3>Evidencia y respuesta</h3></div>
+        <div style="display:flex;gap:12px;margin-bottom:16px">
+          <div style="flex:1;padding:16px;border-radius:14px;background:rgba(52,211,153,.06);border:1px solid rgba(52,211,153,.18)">
+            <div style="font-family:'Space Grotesk';font-weight:700;font-size:26px;color:var(--ok)">${m.evid}</div>
+            <div style="font-size:12px;color:var(--txt-2);margin-top:3px">con evidencia adjunta</div></div>
+          <div style="flex:1;padding:16px;border-radius:14px;background:rgba(251,191,36,.06);border:1px solid rgba(251,191,36,.18)">
+            <div style="font-family:'Space Grotesk';font-weight:700;font-size:26px;color:var(--warn)">${m.entreg-m.resp}</div>
+            <div style="font-size:12px;color:var(--txt-2);margin-top:3px">esperan respuesta</div></div>
+        </div>
+        <button class="btn primary" style="width:100%;justify-content:center" onclick="go('hist')">${svg(ICO.hist)} Registrar entregas y respuestas</button></div>
+    </div>`;
+  } else {
+    document.getElementById('view').innerHTML=head+`
+    <div class="kpis">
+      ${kpi('Autorizadas por mí','58','rango de firma',ICO.auth,'var(--teal)')}
+      ${kpi('En viaje','96','enviadas, sin confirmar',ICO.send,'var(--sky)')}
+      ${kpi('Esperan mi firma','4','en autorización',ICO.sign,'var(--warn)')}
+      ${kpi('Equipo','19','gestores activos',ICO.user,'var(--ok)')}
+    </div>`+transitoPanel()+`
+    <div class="panel glass" style="margin-top:14px"><div class="panel-h"><h3>Accesos rápidos</h3></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn ghost" onclick="go('auth')">${svg(ICO.auth)} Autorizar (4)</button>
+        <button class="btn ghost" onclick="go('firma')">${svg(ICO.sign)} Mi firma</button>
+        <button class="btn ghost" onclick="go('users')">${svg(ICO.user)} Personas y delegación</button>
+        <button class="btn ghost" onclick="go('hist')">${svg(ICO.hist)} Historial</button>
+      </div></div>`;
+  }
+}
+
+/* ============ CARTAS EN VIAJE (tránsito) ============ */
+function transitoPanel(){
+  const c=CARTAS;
+  const est=[
+    ['Emitidas sin enviar',c.filter(x=>x.entrega==='emitida').length,'var(--txt-2)'],
+    ['Enviadas a la gerente',c.filter(x=>x.entrega==='enviada_gerente').length,'var(--sky)'],
+    ['Entregadas a la rep. (evidencia)',c.filter(x=>x.entrega==='entregada').length,'var(--ok)'],
+    ['Con respuesta',c.filter(x=>x.entrega==='respondida').length,'var(--warn)'],
+  ];
+  const max=Math.max(...est.map(e=>e[1]),1);
+  return `<div class="panel glass" style="margin-top:14px">
+    <div class="panel-h"><div><h3>Cartas en la cadena de entrega</h3>
+      <div style="font-size:12px;color:var(--txt-3);margin-top:3px">Gestor → Gerente de Zona → Representante (cliente final)</div></div></div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px">
+      ${est.map(([n,v,col])=>`<div style="padding:16px;border-radius:14px;background:rgba(255,255,255,.03);border:1px solid var(--stroke)">
+        <div style="font-family:'Space Grotesk';font-weight:700;font-size:28px;color:${col}">${v}</div>
+        <div style="font-size:12px;color:var(--txt-2);margin-top:4px;line-height:1.4">${n}</div>
+        <div class="tmeter" style="margin-top:10px;width:100%"><i style="width:${(v/max)*100}%;background:${col}"></i></div></div>`).join('')}
+    </div>
+    <div style="margin-top:14px;padding:13px;border-radius:12px;background:rgba(52,211,153,.06);border:1px solid rgba(52,211,153,.16);font-size:12.5px;color:var(--txt-2)">
+      ${svg(ICO.check,14)} La entrega a la representante <b>exige evidencia</b> (carta confirmada, captura de WhatsApp, correo u otro). Sin evidencia no se marca como entregada.
+    </div>
+  </div>`;
+}
+
+/* ============ DELEGACIÓN ============ */
+function delegarCarga(){
+  const sel=document.getElementById('delGestor'); if(!sel)return;
+  STATE.delegado=sel.value;
+  toast('ok',`Carga de base delegada a ${sel.value.split(' ')[0]} ${sel.value.split(' ')[1]}`);
+  viewUsers();
+}
+function quitarDelegacion(){STATE.delegado=null;toast('info','Delegación retirada');viewUsers();}
+function delegPanel(){
+  return `<div class="panel glass" style="margin-bottom:14px">
+    <div class="panel-h"><div><h3>Delegación de carga de base</h3>
+      <div style="font-size:12px;color:var(--txt-3);margin-top:3px">Si Supervisión no está disponible, designa a un gestor para cargar la base del query</div></div>
+      ${STATE.delegado?`<span class="pill ok">${svg(ICO.check,12)} Activa</span>`:`<span class="pill warn">Sin delegar</span>`}</div>
+    ${STATE.delegado
+      ? `<div style="display:flex;align-items:center;gap:14px;padding:14px;border-radius:12px;background:rgba(52,211,153,.06);border:1px solid rgba(52,211,153,.18)">
+          <div class="avatar" style="width:36px;height:36px;border-radius:10px;font-size:12px;background:linear-gradient(135deg,#2DD4BF,#38BDF8)">${iniciales(STATE.delegado)}</div>
+          <div style="flex:1"><div class="rep-nm">${STATE.delegado}</div>
+            <div style="font-size:12px;color:var(--txt-3)">Puede cargar la base del query temporalmente</div></div>
+          <button class="btn ghost sm" style="color:var(--bad)" onclick="quitarDelegacion()">Retirar</button></div>`
+      : `<div class="toolbar" style="margin:0">
+          <div class="field" style="flex:1"><label>Designar gestor</label>
+            <select class="select" id="delGestor" style="width:100%">${GESTORES.map(g=>`<option>${g.nombre.split(' ').slice(0,3).join(' ')}</option>`).join('')}</select></div>
+          <div class="field"><label>&nbsp;</label><button class="btn primary" onclick="delegarCarga()">${svg(ICO.shield)} Delegar carga</button></div>
+        </div>`}
+  </div>`;
+}
+
+/* ============ EDITOR DE PLANTILLAS ============ */
+const PL_ITEMS=[
+  {k:'recordatorio',n:'Cobro · Recordatorio de Pago',pd:'A · PD1–3'},
+  {k:'requerimiento',n:'Cobro · Requerimiento Formal',pd:'C · PD4–5'},
+  {k:'escalamiento',n:'Cobro · Aviso de Escalamiento',pd:'C · PD6'},
+  {k:'prejuridica',n:'Cobro · Notificación Prejurídica',pd:'C · PD7'},
+  {k:'finiquito',n:'Finiquito',pd:'saldo 0'},
+  {k:'aldia',n:'Confirmación de Cuenta al Día',pd:'al día'},
+  {k:'saldo',n:'Constancia de Saldo Pendiente',pd:'saldo > 0'},
+];
+const TOKENS_DISP=['{{NOMBRE}}','{{CODIGO}}','{{ZONA}}','{{MONEDA}}','{{MONTO}}','{{CAMPANA}}','{{ENTIDAD}}','{{CIUDAD}}','{{FECHA}}','{{DOCUMENTO}}','{{PLAZO}}','{{CANALES_PAGO}}'];
+function viewPlantillas(){
+  document.getElementById('view').innerHTML=`
+  <div class="panel glass" style="margin-bottom:14px">
+    <div class="panel-h"><div><h3>Editor de plantillas de cartas</h3>
+      <div style="font-size:12px;color:var(--txt-3);margin-top:3px">Modifica el texto de las cartas. Los campos del Excel se respetan tal cual.</div></div></div>
+    <div style="padding:13px;border-radius:12px;background:rgba(218,24,132,.06);border:1px solid rgba(218,24,132,.18);font-size:12.5px;color:var(--txt-2);line-height:1.6">
+      ${svg(ICO.bolt,14)} Los <b>campos entre llaves</b> se completan automáticamente con los datos del Excel/SQL y <b>no deben modificarse</b>. Solo edita el texto alrededor. Campos disponibles:
+      <div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px">${TOKENS_DISP.map(t=>`<span class="mtag">${t}</span>`).join('')}</div>
+    </div>
+  </div>
+  ${PL_ITEMS.map(it=>`<div class="panel glass" style="margin-bottom:12px">
+    <div class="panel-h"><div><h3 style="font-size:15px">${it.n}</h3>
+      <div style="font-size:11px;color:var(--txt-3);margin-top:2px;font-family:'JetBrains Mono'">${it.pd}${STATE.plantillas[it.k]!=null?' · editada':''}</div></div>
+      <button class="btn ghost sm" onclick="showLetterDemo('${it.k}')">${svg(ICO.letter,14)} Vista previa</button></div>
+    <textarea id="pl_${it.k}" class="input" style="width:100%;min-width:0;min-height:150px;font-family:'Inter';font-size:13px;line-height:1.65;resize:vertical;padding:14px">${getPlantilla(it.k)}</textarea>
+    <div style="display:flex;gap:10px;margin-top:10px">
+      <button class="btn primary sm" onclick="savePlantilla('${it.k}')">${svg(ICO.check,14)} Guardar texto</button>
+      <button class="btn ghost sm" onclick="resetPlantilla('${it.k}')">Restaurar original</button>
+    </div>
+  </div>`).join('')}`;
+}
+function savePlantilla(k){STATE.plantillas[k]=document.getElementById('pl_'+k).value;toast('ok','Plantilla guardada · se usará en las próximas cartas');viewPlantillas();}
+function resetPlantilla(k){delete STATE.plantillas[k];toast('info','Plantilla restaurada al texto original');viewPlantillas();}
+function showLetterDemo(k){
+  const ta=document.getElementById('pl_'+k); if(ta) STATE.plantillas[k]=ta.value;
+  const cobro={recordatorio:r=>r.inact>=1&&r.inact<=3,requerimiento:r=>r.inact>=4&&r.inact<=5,escalamiento:r=>r.inact===6,prejuridica:r=>r.inact===7};
+  let rep,tipo;
+  if(cobro[k]){tipo='cobro';rep=REPS.find(cobro[k])||REPS.find(r=>r.balance>0);}
+  else{tipo=k;rep=REPS.find(r=>(k==='finiquito'||k==='aldia')?r.balance<=0:r.balance>0)||REPS[0];}
+  showLetter(rep.cod,tipo);
+}
+
+/* ============ TOAST ============ */
+function toast(type,msg){
+  const ic=type==='ok'?ICO.check:ICO.bolt;
+  const t=document.createElement('div');t.className='toast '+type;
+  t.innerHTML=`<div class="ti">${svg(ic,14)}</div><span>${msg}</span>`;
+  document.getElementById('toasts').appendChild(t);
+  setTimeout(()=>{t.style.transition='.4s';t.style.opacity='0';t.style.transform='translateX(120%)';setTimeout(()=>t.remove(),400);},3400);
+}
+
+/* ============ PERSONAS (administración) ============ */
+let userFilter='todos';
+function viewUsers(){
+  const sup=USUARIOS.filter(u=>u.rol==='super');
+  const ges=USUARIOS.filter(u=>u.rol==='gestor');
+  const act=USUARIOS.filter(u=>u.activo).length;
+  const list = userFilter==='super'?sup : userFilter==='gestor'?ges : USUARIOS;
+  document.getElementById('view').innerHTML=`
+  ${delegPanel()}
+  <div class="toolbar">
+    <div class="seg" style="height:fit-content;align-self:flex-end">
+      <button class="${userFilter==='todos'?'on':''}" onclick="setUF('todos')">Todos · ${USUARIOS.length}</button>
+      <button class="${userFilter==='super'?'on':''}" onclick="setUF('super')">Supervisión · ${sup.length}</button>
+      <button class="${userFilter==='gestor'?'on':''}" onclick="setUF('gestor')">Gestores · ${ges.length}</button>
+    </div>
+    <div style="flex:1"></div>
+    <span class="pill ok" style="align-self:flex-end;height:fit-content">${svg(ICO.check,12)} ${act} activos</span>
+    <div class="field"><label>&nbsp;</label><button class="btn primary" onclick="userModal()">${svg(ICO.user)} Agregar persona</button></div>
+  </div>
+  <div class="tbl-wrap glass"><table>
+    <thead><tr><th>Persona</th><th>Cód. empleado</th><th>Rol</th><th>Cartera asignada</th><th>PIN</th><th>Estado</th><th></th></tr></thead>
+    <tbody>${list.map((u,idx)=>{
+      const i=USUARIOS.indexOf(u);
+      const av=u.rol==='super'?'var(--accent-v)':'linear-gradient(135deg,#2DD4BF,#38BDF8)';
+      return `<tr class="${u.activo?'':'blocked'}">
+        <td><div style="display:flex;align-items:center;gap:11px">
+          <div class="avatar" style="width:34px;height:34px;border-radius:9px;font-size:12px;background:${av}">${u.av}</div>
+          <div><div class="rep-nm">${u.nombre}</div><div class="rep-cod">${u.cargo}</div></div></div></td>
+        <td><span style="font-family:'JetBrains Mono';font-size:12px;color:var(--txt-2)">${u.cod}</span></td>
+        <td>${u.rol==='super'
+          ? `<span class="pd-chip pd-C" style="background:rgba(168,85,247,.14);color:#C084FC;border-color:rgba(168,85,247,.25)">Supervisión</span>`
+          : `<span class="pd-chip pd-A">Gestor</span>`}</td>
+        <td><span style="font-size:12.5px;color:${u.cartera==='Sin asignar'?'var(--txt-3)':'var(--txt)'}">${u.cartera}</span></td>
+        <td><span style="font-family:'JetBrains Mono';font-size:13px;letter-spacing:2px;color:var(--txt-3)">••••</span>
+            <span style="font-size:10.5px;color:var(--teal);cursor:pointer;margin-left:6px" onclick="toast('info','Nuevo PIN generado para ${u.nombre.split(' ')[0]}')">regenerar</span></td>
+        <td><span class="st ${u.activo?'sent':'rej'}"><i></i>${u.activo?'Activo':'Inactivo'}</span></td>
+        <td style="text-align:right"><div style="display:flex;gap:6px;justify-content:flex-end">
+          <button class="btn ghost sm" style="padding:6px 11px" onclick="userModal(${i})">Editar</button>
+          <button class="btn ghost sm" style="padding:6px 11px;color:${u.activo?'var(--bad)':'var(--ok)'}" onclick="toggleUser(${i})">${u.activo?'Desactivar':'Activar'}</button>
+        </div></td>
+      </tr>`;}).join('')}</tbody>
+  </table></div>`;
+}
+function setUF(f){userFilter=f;viewUsers();}
+function toggleUser(i){USUARIOS[i].activo=!USUARIOS[i].activo;
+  toast('info',`${USUARIOS[i].nombre.split(' ')[0]} ${USUARIOS[i].activo?'activado':'desactivado'}`);viewUsers();}
+function userModal(i){
+  const ed=i!=null, u=ed?USUARIOS[i]:{nombre:'',cod:'',rol:'gestor',cargo:'Gestor de Cobros',cartera:'Sin asignar'};
+  const paises=['Sin asignar','Todos los países',...Object.values(PAISES).map(p=>p.nombre)];
+  document.getElementById('modal').innerHTML=`
+    <div class="modal-h">${svg(ICO.user,18)}<div><h3>${ed?'Editar persona':'Agregar persona'}</h3></div>
+      <div class="x" onclick="closeModal()">${svg(ICO.x,16)}</div></div>
+    <div class="modal-body" style="display:block;max-width:520px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div class="field" style="grid-column:1/3"><label>Nombre completo</label>
+          <input class="input" id="f_nombre" style="min-width:0" value="${u.nombre}" placeholder="Nombre y apellidos"></div>
+        <div class="field"><label>Código de empleado</label>
+          <input class="input" id="f_cod" style="min-width:0" value="${u.cod==='—'?'':u.cod}" placeholder="15521"></div>
+        <div class="field"><label>Rol</label>
+          <select class="select" id="f_rol" style="min-width:0">
+            <option value="gestor" ${u.rol==='gestor'?'selected':''}>Gestor de Cobros</option>
+            <option value="super" ${u.rol==='super'?'selected':''}>Supervisión</option></select></div>
+        <div class="field"><label>Cartera asignada</label>
+          <select class="select" id="f_cartera" style="min-width:0">
+            ${paises.map(p=>`<option ${u.cartera===p?'selected':''}>${p}</option>`).join('')}</select></div>
+        <div class="field"><label>PIN de acceso</label>
+          <input class="input" id="f_pin" style="min-width:0" value="${ed?'':Math.floor(1000+Math.random()*9000)}" placeholder="4 dígitos"></div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:24px">
+        <button class="btn ghost" style="flex:1;justify-content:center" onclick="closeModal()">Cancelar</button>
+        <button class="btn primary" style="flex:1;justify-content:center" onclick="saveUser(${ed?i:-1})">${svg(ICO.check)} ${ed?'Guardar cambios':'Crear acceso'}</button>
+      </div>
+    </div>`;
+  document.getElementById('overlay').classList.add('show');
+}
+function saveUser(i){
+  const nombre=document.getElementById('f_nombre').value.trim();
+  if(!nombre){toast('info','Escribe el nombre de la persona');return;}
+  const data={nombre,cod:document.getElementById('f_cod').value.trim()||'—',
+    rol:document.getElementById('f_rol').value,cartera:document.getElementById('f_cartera').value,
+    av:iniciales(nombre),activo:true};
+  data.cargo=data.rol==='super'?'Supervisor de Cobros':'Gestor de Cobros';
+  if(i>=0){USUARIOS[i]={...USUARIOS[i],...data};toast('ok',`${nombre.split(' ')[0]} actualizado`);}
+  else{USUARIOS.push(data);toast('ok',`Acceso creado para ${nombre.split(' ')[0]}`);}
+  closeModal();viewUsers();
+}
+
+/* init */
+renderLogin();
+document.getElementById('overlay').addEventListener('click',e=>{if(e.target.id==='overlay')closeModal();});
+
+</script>
+</body>
+</html>
