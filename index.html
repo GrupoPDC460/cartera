@@ -386,6 +386,7 @@ tbody tr.blocked{opacity:.62}
 <div class="overlay" id="overlay"><div class="modal glass" id="modal"></div></div>
 <div class="toast-wrap" id="toasts"></div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 /* ============ Cartera · CRM de cartas (prototipo demo) ============ */
 
@@ -413,7 +414,7 @@ const ICO = {
 const svg=(p,w=18)=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="${w}" height="${w}">${p}</svg>`;
 
 /* ---------- configuración por país (tabla CT) ---------- */
-const PAISES = {
+let PAISES = {
   GT:{nombre:'Guatemala',ciudad:'Ciudad de Guatemala',entidad:'Productos Avon de Guatemala, S.A.',moneda:'Q',cod:'502'},
   SV:{nombre:'El Salvador',ciudad:'Antiguo Cuscatlán',entidad:'Productos Avon, S.A. de C.V.',moneda:'US$',cod:'503'},
   HD:{nombre:'Honduras',ciudad:'Tegucigalpa',entidad:'Productos Avon, S.A. de C.V.',moneda:'L',cod:'504'},
@@ -440,12 +441,12 @@ const variantePorPD = pd => VARIANTES.find(v=>pd>=v.pdMin&&pd<=v.pdMax) || VARIA
 
 /* ---------- usuarios reales ---------- */
 const iniciales = n => {const p=n.trim().split(/\s+/);return ((p[0]?.[0]||'')+(p[2]?.[0]||p[1]?.[0]||'')).toUpperCase();};
-const SUPERVISION = [
+let SUPERVISION = [
   {cod:'—',nombre:'Daniel Monge',cargo:'Supervisor de Cobros'},
   {cod:'—',nombre:'Oliver Santos',cargo:'Supervisor de Cobros'},
   {cod:'—',nombre:'Henry Velásquez',cargo:'Líder de Cobros'},
 ];
-const GESTORES = [
+let GESTORES = [
   {cod:'15521',nombre:'Sherly Amavilia Cotom Mateo'},
   {cod:'15548',nombre:'Sarai Azusena Ticas Garcia'},
   {cod:'15529',nombre:'Jasmin Virginia Ramirez Colay'},
@@ -544,7 +545,9 @@ function renderLogin(){
         <div class="who">${r.who}</div>
       </div>`).join('')}</div>
     ${PRUEBAS?`<div style="margin-top:22px;font-size:12px;color:var(--txt-3);font-family:'JetBrains Mono';display:flex;align-items:center;gap:8px;justify-content:center">
-      <span class="pill warn">${svg(ICO.bolt,12)} Modo pruebas</span> acceso sin claves · en producción: Avon + código</div>`:''}`;
+      <span class="pill warn">${svg(ICO.bolt,12)} Modo pruebas</span> acceso sin claves · en producción: Avon + código</div>`:''}
+    <div style="margin-top:12px;font-size:11.5px;font-family:'JetBrains Mono';display:flex;align-items:center;gap:7px;justify-content:center;color:${SB_OK?'var(--ok)':'var(--txt-3)'}">
+      <span style="width:7px;height:7px;border-radius:50%;background:${SB_OK?'var(--ok)':'var(--warn)'};box-shadow:0 0 8px ${SB_OK?'var(--ok)':'var(--warn)'}"></span>${SB_MSG}</div>`;
 }
 function pickRole(id){
   const r=ROLES.find(x=>x.id===id), isG=id==='gestor';
@@ -889,7 +892,8 @@ saldo:`A quien corresponda:
 El presente documento se extiende para que la representante pueda efectuar el pago correspondiente a través de {{CANALES_PAGO}}, indicando como referencia su código de representante {{CODIGO}}.
 Se extiende en la ciudad de {{CIUDAD}}, el {{FECHA}}.`
 };
-function getPlantilla(k){return (STATE.plantillas&&STATE.plantillas[k]!=null)?STATE.plantillas[k]:PLANTILLAS_BASE[k];}
+let PLANTILLAS=Object.assign({},PLANTILLAS_BASE);
+function getPlantilla(k){return (STATE.plantillas&&STATE.plantillas[k]!=null)?STATE.plantillas[k]:(PLANTILLAS[k]||PLANTILLAS_BASE[k]);}
 function fillTokens(texto,c){
   return texto
     .replace(/\{\{MONEDA\}\}\s*\{\{MONTO\}\}/g,`<b style="color:#000">${c.moneda} ${c.monto}</b>`)
@@ -1428,7 +1432,14 @@ function viewPlantillas(){
     </div>
   </div>`).join('')}`;
 }
-function savePlantilla(k){STATE.plantillas[k]=document.getElementById('pl_'+k).value;toast('ok','Plantilla guardada · se usará en las próximas cartas');viewPlantillas();}
+function savePlantilla(k){
+  STATE.plantillas[k]=document.getElementById('pl_'+k).value;
+  if(SB_OK&&sb){
+    sb.from('cartera_plantillas').update({texto:STATE.plantillas[k],actualizado_por:(STATE.role&&STATE.role.user)||'—',actualizado_en:new Date().toISOString()}).eq('clave',k)
+      .then(({error})=>toast(error?'info':'ok', error?('No se pudo guardar en Supabase: '+error.message):'Plantilla guardada en Supabase'));
+  } else toast('ok','Plantilla guardada (local · modo demo)');
+  viewPlantillas();
+}
 function resetPlantilla(k){delete STATE.plantillas[k];toast('info','Plantilla restaurada al texto original');viewPlantillas();}
 function showLetterDemo(k){
   const ta=document.getElementById('pl_'+k); if(ta) STATE.plantillas[k]=ta.value;
@@ -1535,8 +1546,39 @@ function saveUser(i){
   closeModal();viewUsers();
 }
 
+/* ============ CONEXIÓN SUPABASE ============ */
+const SB_URL='https://fbhkkprnpabwapgetbad.supabase.co';
+const SB_KEY='sb_publishable_vl7RWFKvyBTJYVSYclo6EQ_Mt64ibRj';
+let sb=null, SB_OK=false, SB_MSG='conectando…';
+async function initSupabase(){
+  try{
+    if(!window.supabase||!window.supabase.createClient) throw new Error('SDK no cargado');
+    sb=window.supabase.createClient(SB_URL,SB_KEY);
+    const [cp,us,pl]=await Promise.all([
+      sb.from('cartera_config_paises').select('*'),
+      sb.from('cartera_usuarios').select('*'),
+      sb.from('cartera_plantillas').select('*')
+    ]);
+    if(cp.error) throw cp.error; if(us.error) throw us.error; if(pl.error) throw pl.error;
+    if(cp.data&&cp.data.length){const np={};cp.data.forEach(r=>{np[r.iso]={nombre:r.nombre,ciudad:r.ciudad_emision,entidad:r.razon_social,moneda:r.moneda,cod:r.cod_area};});PAISES=np;}
+    if(us.data&&us.data.length){
+      SUPERVISION=us.data.filter(u=>u.rol==='supervision').map(u=>({cod:u.codigo_empleado||'—',nombre:u.nombre,cargo:u.cargo}));
+      GESTORES=us.data.filter(u=>u.rol==='gestor').map(u=>({cod:u.codigo_empleado,nombre:u.nombre}));
+      USUARIOS=us.data.map(u=>({cod:u.codigo_empleado||'—',nombre:u.nombre,rol:u.rol==='supervision'?'super':'gestor',cargo:u.cargo,av:iniciales(u.nombre),cartera:u.cartera_pais||'Sin asignar',activo:u.activo!==false}));
+      ROLES[0].who=GESTORES.length+' gestores'; if(GESTORES[0])ROLES[0].user=GESTORES[0].nombre;
+    }
+    if(pl.data&&pl.data.length){pl.data.forEach(r=>{if(r.texto)PLANTILLAS[r.clave]=r.texto;});}
+    SB_OK=true; SB_MSG='Conectado a Supabase';
+    console.log('[Cartera] Supabase OK ·',(cp.data||[]).length,'países ·',(us.data||[]).length,'usuarios ·',(pl.data||[]).length,'plantillas');
+  }catch(e){
+    SB_OK=false; SB_MSG='Modo demo (sin conexión)';
+    console.warn('[Cartera] Supabase no disponible →', e&&e.message?e.message:e);
+  }
+}
+
 /* init */
 renderLogin();
+initSupabase().then(()=>{const lg=document.getElementById('login');if(lg&&!lg.classList.contains('hidden'))renderLogin();});
 document.getElementById('overlay').addEventListener('click',e=>{if(e.target.id==='overlay')closeModal();});
 
 </script>
