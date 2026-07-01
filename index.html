@@ -1553,12 +1553,13 @@ let sb=null, SB_OK=false, SB_MSG='conectando…';
 async function initSupabase(){
   try{
     if(!window.supabase||!window.supabase.createClient) throw new Error('SDK no cargado');
-    sb=window.supabase.createClient(SB_URL,SB_KEY);
-    const [cp,us,pl]=await Promise.all([
+    sb=window.supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:false}});
+    const withTimeout=(p,ms)=>Promise.race([p,new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),ms))]);
+    const [cp,us,pl]=await withTimeout(Promise.all([
       sb.from('cartera_config_paises').select('*'),
       sb.from('cartera_usuarios').select('*'),
       sb.from('cartera_plantillas').select('*')
-    ]);
+    ]),8000);
     if(cp.error) throw cp.error; if(us.error) throw us.error; if(pl.error) throw pl.error;
     if(cp.data&&cp.data.length){const np={};cp.data.forEach(r=>{np[r.iso]={nombre:r.nombre,ciudad:r.ciudad_emision,entidad:r.razon_social,moneda:r.moneda,cod:r.cod_area};});PAISES=np;}
     if(us.data&&us.data.length){
@@ -1569,12 +1570,15 @@ async function initSupabase(){
     }
     if(pl.data&&pl.data.length){pl.data.forEach(r=>{if(r.texto)PLANTILLAS[r.clave]=r.texto;});}
     SB_OK=true; SB_MSG='Conectado a Supabase';
-    console.log('[Cartera] Supabase OK ·',(cp.data||[]).length,'países ·',(us.data||[]).length,'usuarios ·',(pl.data||[]).length,'plantillas');
   }catch(e){
-    SB_OK=false; SB_MSG='Modo demo (sin conexión)';
-    console.warn('[Cartera] Supabase no disponible →', e&&e.message?e.message:e);
+    SB_OK=false;
+    SB_MSG=(e&&e.message==='timeout')?'Modo demo (vista previa sin salida a internet)':'Modo demo (sin conexión)';
   }
 }
+window.addEventListener('unhandledrejection',ev=>{
+  const msg=(ev&&ev.reason&&ev.reason.message)||'';
+  if(msg.includes('could not be cloned')||msg.includes('postMessage')){ev.preventDefault();}
+});
 
 /* init */
 renderLogin();
