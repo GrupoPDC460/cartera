@@ -387,6 +387,9 @@ tbody tr.blocked{opacity:.62}
 <div class="toast-wrap" id="toasts"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script>
 /* ============ Cartera · CRM de cartas (prototipo demo) ============ */
 
@@ -1137,25 +1140,68 @@ function confirmEntrega(){
   closeModal(); toast('ok',`Entrega registrada · ${CANALES[entregaTmp.canal]} · con evidencia`);
   viewHist();
 }
-function descargarZip(n){
+/* ============ GENERACIÓN REAL DE PDF ============ */
+async function renderCartaAPdf(rep,tipo,num){
+  const html=letterHTML(rep,tipo,num);
+  const host=document.createElement('div');
+  host.style.cssText='position:fixed;left:-9999px;top:0;width:850px;background:#fff';
+  host.innerHTML=html;
+  const el=host.querySelector('.letter-frame');
+  el.style.width='800px'; el.style.boxShadow='none'; el.style.borderRadius='0';
+  document.body.appendChild(host);
+  await new Promise(r=>{const imgs=host.querySelectorAll('img');let n=imgs.length;if(!n)return r();
+    imgs.forEach(im=>{if(im.complete)n--;else im.onload=im.onerror=()=>{n--;if(n<=0)r();};});if(n<=0)r();});
+  const canvas=await html2canvas(el,{scale:2,backgroundColor:'#ffffff',useCORS:true});
+  document.body.removeChild(host);
+  const {jsPDF}=window.jspdf;
+  const pdf=new jsPDF({unit:'pt',format:'letter'});
+  const pw=pdf.internal.pageSize.getWidth(), ph=pdf.internal.pageSize.getHeight();
+  const imgW=pw, imgH=canvas.height*(imgW/canvas.width);
+  pdf.addImage(canvas.toDataURL('image/jpeg',0.95),'JPEG',0,0,imgW,Math.min(imgH,ph));
+  return pdf;
+}
+async function descargarPDFUnico(cod,tipo,num){
+  const rep=REPS.find(r=>r.cod===cod); if(!rep)return;
+  toast('info','Generando PDF…');
+  try{
+    const pdf=await renderCartaAPdf(rep,tipo,num);
+    const numC=correlativo(rep,num);
+    pdf.save(`${numC}_${tipo}_${rep.cod}.pdf`);
+    toast('ok','PDF descargado · '+numC);
+  }catch(e){toast('info','No se pudo generar el PDF: '+(e&&e.message?e.message:'error'));}
+}
+async function descargarZip(n){
   if(!n){toast('info','No hay cartas listas para descargar');return;}
+  const isSuper=STATE.role.id==='super';
+  let lista=(isSuper?CARTAS:CARTAS.filter(c=>c.gestor===STATE.role.user)).filter(c=>c.entrega!=='emitida').slice(0,n);
+  if(!lista.length) lista=CARTAS.slice(0,n);
   document.getElementById('modal').innerHTML=`<div class="gen-prog">
     <div class="gen-ring"><svg width="90" height="90"><circle cx="45" cy="45" r="38" stroke="rgba(255,255,255,.1)" stroke-width="6" fill="none"/>
       <circle id="zring" cx="45" cy="45" r="38" stroke="url(#gz)" stroke-width="6" fill="none" stroke-linecap="round" stroke-dasharray="239" stroke-dashoffset="239"/>
       <defs><linearGradient id="gz"><stop offset="0" stop-color="#2DD4BF"/><stop offset="1" stop-color="#38BDF8"/></linearGradient></defs></svg>
       <div class="pct" id="zpct">0%</div></div>
-    <h3>Empaquetando ${n} cartas</h3><p id="zmsg">Generando PDFs…</p></div>`;
+    <h3>Empaquetando ${lista.length} cartas</h3><p id="zmsg">Generando PDFs…</p></div>`;
   document.getElementById('overlay').classList.add('show');
-  let i=0; const ring=document.getElementById('zring');
-  const tick=setInterval(()=>{
-    i++; const pct=Math.round((i/n)*100);
-    document.getElementById('zpct').textContent=pct+'%';
-    document.getElementById('zmsg').textContent=`PDF ${i} de ${n} · agregado al ZIP`;
-    ring.style.strokeDashoffset=239-(239*pct/100);
-    if(i>=n){clearInterval(tick);setTimeout(()=>{closeModal();
-      toast('ok',`ZIP descargado · ${n} cartas en un solo archivo`);},500);}
-  },Math.max(140,800/n));
+  const zip=new JSZip();
+  for(let i=0;i<lista.length;i++){
+    const c=lista[i], rep=REPS.find(r=>r.cod===c.cod);
+    if(rep){
+      try{
+        const pdf=await renderCartaAPdf(rep,c.tipo,c.num);
+        zip.file(`${c.num}_${c.tipo}_${rep.cod}.pdf`,pdf.output('arraybuffer'));
+      }catch(e){}
+    }
+    const pct=Math.round(((i+1)/lista.length)*100);
+    const pc=document.getElementById('zpct'), ms=document.getElementById('zmsg'), rg=document.getElementById('zring');
+    if(pc)pc.textContent=pct+'%'; if(ms)ms.textContent=`PDF ${i+1} de ${lista.length} · agregado al ZIP`;
+    if(rg)rg.style.strokeDashoffset=239-(239*pct/100);
+  }
+  const blob=await zip.generateAsync({type:'blob'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download=`cartera_lote_${new Date().toISOString().slice(0,10)}.zip`; a.click();
+  closeModal(); toast('ok',`ZIP descargado · ${lista.length} cartas en un solo archivo`);
 }
+
 
 /* ============ VISOR DE CARTA ============ */
 function showLetter(cod,tipo,num){
@@ -1177,7 +1223,7 @@ function showLetter(cod,tipo,num){
           <div class="ps-row"><span class="k">Ciudad</span><span class="v" style="font-size:10.5px">${p.ciudad}</span></div>
           <div class="ps-row"><span class="k">Firma</span><span class="v" style="font-size:10.5px">${(STATE.role&&STATE.role.id==='super')?STATE.role.user.split(' ')[0]:'Daniel'}</span></div>
         </div>
-        <button class="btn primary" style="width:100%;justify-content:center" onclick="toast('ok','Descargando PDF…')">${svg(ICO.down)} Descargar PDF</button>
+        <button class="btn primary" style="width:100%;justify-content:center" onclick="descargarPDFUnico('${rep.cod}','${tipo}',${num?`'${num}'`:'null'})">${svg(ICO.down)} Descargar PDF</button>
         <button class="btn ghost" style="width:100%;justify-content:center;margin-top:9px" onclick="closeModal()">Cerrar</button>
       </div>
     </div>`;
