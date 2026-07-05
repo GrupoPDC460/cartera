@@ -434,14 +434,19 @@ const TIPOS = {
   aldia:{nombre:'Confirmación cuenta al día',muestra:false,regla:'cero'},
   saldo:{nombre:'Saldo pendiente',muestra:true,regla:'pos'},
 };
-/* variantes de cobro por mora */
+/* variantes de cobro por mora — el PD lo coloca el gestor/query, no se calcula */
 const VARIANTES = [
   {id:'recordatorio',nombre:'Recordatorio de Pago',estatus:'A',pdMin:1,pdMax:3,tono:'Empático'},
   {id:'requerimiento',nombre:'Requerimiento Formal',estatus:'C',pdMin:4,pdMax:5,tono:'Firme'},
   {id:'escalamiento',nombre:'Aviso de Escalamiento',estatus:'C',pdMin:6,pdMax:6,tono:'Fuerte'},
   {id:'prejuridica',nombre:'Notificación Prejurídica',estatus:'C',pdMin:7,pdMax:7,tono:'Máxima presión'},
 ];
-const variantePorPD = pd => VARIANTES.find(v=>pd>=v.pdMin&&pd<=v.pdMax) || VARIANTES[3];
+const RECOVERY={id:'recovery',nombre:'Recovery (gestión especial)',tono:'Fuera de las 4 variantes estándar'};
+function variantePorPD(pd,estatus){
+  if(estatus==='M'||estatus==='R') return RECOVERY;
+  const v=VARIANTES.find(v=>pd>=v.pdMin&&pd<=v.pdMax);
+  return v||VARIANTES[VARIANTES.length-1];
+}
 
 /* ---------- usuarios reales ---------- */
 const iniciales = n => {const p=n.trim().split(/\s+/);return ((p[0]?.[0]||'')+(p[2]?.[0]||p[1]?.[0]||'')).toUpperCase();};
@@ -528,9 +533,13 @@ function validar(rep,tipoId){
   if(t.regla==='pos' && b<=0) return {ok:false,rsn:b===0?'Saldo cero':'Saldo negativo'};
   if(t.regla==='cero' && b>0)  return {ok:false,rsn:'Tiene saldo pendiente'};
   if(tipoId==='cobro'){
-    const v=variantePorPD(rep.inact);
-    const dup=rep.prev.some(p=>p.tipo==='cobro'&&p.pd>=v.pdMin&&p.pd<=v.pdMax);
-    if(dup) return {ok:false,rsn:'Duplicada (mismo tramo)'};
+    const v=variantePorPD(rep.inact,rep.estatus);
+    const dup=rep.prev.some(p=>{
+      if(p.tipo!=='cobro'||p.camp!==rep.camp) return false;
+      if(v.id==='recovery') return p.estatus==='M'||p.estatus==='R';
+      return p.pd>=v.pdMin&&p.pd<=v.pdMax;
+    });
+    if(dup) return {ok:false,rsn:'Duplicada (mismo tramo · misma campaña)'};
   }
   return {ok:true};
 }
@@ -792,8 +801,8 @@ function viewUpload(){
   </div>`;
 }
 function downloadConsolidado(n){
-  let csv='Codigo,Pais\n';
-  REPS.forEach(r=>{csv+=`${r.cod},${PAISES[r.pais].nombre}\n`;});
+  let csv='Codigo,Pais,PD\n';
+  REPS.forEach(r=>{csv+=`${r.cod},${PAISES[r.pais].nombre},${r.estatus==='M'||r.estatus==='R'?r.estatus:('PD'+r.inact)}\n`;});
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
   a.download='consolidado_recopilacion.csv';a.click();
   toast('ok',`Consolidado descargado · ${n} códigos · listo para el query`);
@@ -803,14 +812,14 @@ const PAIS_A_ISO={GUATEMALA:'GT','EL SALVADOR':'SV',HONDURAS:'HD',NICARAGUA:'NC'
 const HEADER_MAP={
   'CODIGO REP':'cod','CÓDIGO REP':'cod','CODIGO':'cod','CÓDIGO':'cod',
   'ESTATUS ACTUAL':'estatus','ESTATUS':'estatus',
-  'N. INACTIVIDADES':'pd','N INACTIVIDADES':'pd','INACTIVIDADES':'pd','N. INACTIVIDADES ':'pd',
+  'N. INACTIVIDADES':'inactividades','N INACTIVIDADES':'inactividades','INACTIVIDADES':'inactividades','N. INACTIVIDADES ':'inactividades',
   'PAIS':'pais','PAÍS':'pais',
   'ZONA':'zona','SECTOR':'sector',
   'NOMBRE_CONSEJERA':'nombre','NOMBRE CONSEJERA':'nombre','NOMBRE MAYUSCULAS':'nombre',
   'FECHA_NOMBRAMIENTO':'fechaNombramiento','FECHA NOMBRAMIENTO':'fechaNombramiento',
   'BALANCE':'balance','CEDULA':'cedula','CÉDULA':'cedula','# DOCUMENTO':'cedula',
   'CAMPANIA_ULTIMA_ORDEN':'camp','CAMPAÑA_ULTIMA_ORDEN':'camp','CAMPAÑA':'camp','CAMPANA ADEUDO':'camp',
-  'ID':'id'
+  'PD':'pd','ID':'id'
 };
 function normHeader(h){return String(h||'').trim().toUpperCase();}
 function parseFilaBase(row,headers){
@@ -820,18 +829,23 @@ function parseFilaBase(row,headers){
   const isoDirecto=String(o.pais).trim().toUpperCase();
   const iso=PAIS_A_ISO[isoDirecto]||(PAISES[isoDirecto]?isoDirecto:null)||PAIS_A_ISO[isoDirecto.normalize?isoDirecto.normalize('NFD').replace(/[\u0300-\u036f]/g,''):isoDirecto];
   const balance=parseFloat(String(o.balance).replace(/,/g,''))||0;
-  const pd=parseInt(o.pd)||0;
+  const estatus=o.estatus?String(o.estatus).trim().toUpperCase():'A';
+  // El PD NO se calcula de N. INACTIVIDADES — lo coloca el gestor (columna PD) según su estatus (A→1-3, C→4-7, M/R→recovery)
+  let pd=parseInt(o.pd);
+  if(isNaN(pd)) pd = estatus==='A'?1:(estatus==='C'?4:0); // valor provisional si no vino el PD; requiere revisión
   return {
     cod:String(o.cod).trim(),
     pais:iso||null,
     paisTexto:o.pais,
     zona:o.zona?String(o.zona).trim():'—',
     nombre:o.nombre?String(o.nombre).trim():'(sin nombre)',
-    estatus:o.estatus?String(o.estatus).trim().toUpperCase():'A',
+    estatus:estatus,
     inact:pd,
+    inactividadesInfo:o.inactividades!=null?parseInt(o.inactividades):null, // dato informativo, no es el PD
     balance:balance,
     camp:o.camp?String(o.camp).trim():'—',
     cedula:o.cedula?String(o.cedula).trim():'—',
+    pdFaltante: isNaN(parseInt(o.pd)),
     prev:[]
   };
 }
@@ -855,6 +869,7 @@ async function cargarBaseReal(ev){
     });
     if(parsed.length){ REPS.length=0; parsed.forEach(p=>REPS.push(p)); }
     const porPais={}; parsed.forEach(p=>{porPais[p.pais]=(porPais[p.pais]||0)+1;});
+    const sinPD=parsed.filter(p=>p.pdFaltante).length;
     document.getElementById('baseDropTitle').textContent='Sube la base del query SQL (.xlsx o .csv)';
     document.getElementById('baseSummary').innerHTML=`
       <div class="panel glass" style="margin-top:14px">
@@ -865,6 +880,8 @@ async function cargarBaseReal(ev){
         </div>
         ${errores.length?`<div style="padding:12px;border-radius:10px;background:rgba(251,113,133,.06);border:1px solid rgba(251,113,133,.18);font-size:12px;color:var(--txt-2);max-height:140px;overflow-y:auto">
           ${errores.slice(0,20).map(e=>`<div>⚠ ${e}</div>`).join('')}${errores.length>20?`<div>… y ${errores.length-20} más</div>`:''}</div>`:''}
+        ${sinPD?`<div style="margin-top:10px;padding:12px;border-radius:10px;background:rgba(251,191,36,.07);border:1px solid rgba(251,191,36,.2);font-size:12.5px;color:var(--txt-2)">
+          ${svg(ICO.bell,14)} <b style="color:var(--warn)">${sinPD} cuentas sin PD explícito</b> — el query no trae el tramo exacto; los gestores deben indicarlo en la recopilación (columna PD). Se usó un valor provisional para no bloquear la vista previa.</div>`:''}
       </div>`;
     if(parsed.length) toast('ok',`Base cargada · ${parsed.length} representantes reales`);
     else toast('info','No se encontraron filas válidas · revisa los encabezados');
@@ -880,7 +897,7 @@ function viewGen(){
   const tipo=STATE.tipo;
   const rows=REPS.map(r=>{
     const v=validar(r,tipo);
-    const variante=tipo==='cobro'?variantePorPD(r.inact):null;
+    const variante=tipo==='cobro'?variantePorPD(r.inact,r.estatus):null;
     const p=PAISES[r.pais];
     const pdClass=r.inact>=7?'pd-7':(r.estatus==='A'?'pd-A':'pd-C');
     const bClass=r.balance>0?'pos':(r.balance===0?'zero':'neg');
@@ -974,7 +991,11 @@ Se extiende en la ciudad de {{CIUDAD}}, el {{FECHA}}.`,
 saldo:`A quien corresponda:
 {{ENTIDAD}} hace constar que la señora(or) {{NOMBRE}}, con código de representante {{CODIGO}} y zona {{ZONA}}, mantiene a la fecha un saldo pendiente de pago de {{MONEDA}} {{MONTO}}, correspondiente a la campaña {{CAMPANA}}.
 El presente documento se extiende para que la representante pueda efectuar el pago correspondiente a través de {{CANALES_PAGO}}, indicando como referencia su código de representante {{CODIGO}}.
-Se extiende en la ciudad de {{CIUDAD}}, el {{FECHA}}.`
+Se extiende en la ciudad de {{CIUDAD}}, el {{FECHA}}.`,
+recovery:`Estimada(o) Representante:
+Su cuenta se encuentra en un estatus de gestión especial (Recovery) dentro de {{ENTIDAD}}, correspondiente a la campaña {{CAMPANA}}.
+Le solicitamos comunicarse a la brevedad con nuestro equipo de cobros para conocer el detalle de su situación y las opciones disponibles para regularizarla.
+[Texto pendiente de validar por Supervisión — plantilla provisional para estatus M/R.]`
 };
 let PLANTILLAS=Object.assign({},PLANTILLAS_BASE);
 function getPlantilla(k){return (STATE.plantillas&&STATE.plantillas[k]!=null)?STATE.plantillas[k]:(PLANTILLAS[k]||PLANTILLAS_BASE[k]);}
@@ -996,9 +1017,9 @@ function letterHTML(rep,tipo,num){
   const ctx={moneda:p.moneda,monto:rep.balance.toLocaleString('es-GT',{minimumFractionDigits:2,maximumFractionDigits:2}),
     nombre:rep.nombre,cod:rep.cod,zona:rep.zona,camp:rep.camp,entidad:p.entidad,ciudad:p.ciudad,
     fecha:'27 de junio de 2026',doc:rep.cedula,tel:'+502 0000-0000',canales:'banco o entidad autorizada',
-    plazo:(tipo==='cobro'&&variantePorPD(rep.inact).id==='requerimiento')?'5':'3'};
+    plazo:(tipo==='cobro'&&variantePorPD(rep.inact,rep.estatus).id==='requerimiento')?'5':'3'};
   let key,titulo=null,asunto=null,destinatario=true;
-  if(tipo==='cobro'){const v=variantePorPD(rep.inact);key=v.id;asunto=v.nombre;}
+  if(tipo==='cobro'){const v=variantePorPD(rep.inact,rep.estatus);key=v.id;asunto=v.nombre;}
   else{key=tipo;destinatario=false;titulo={finiquito:'FINIQUITO Y CONSTANCIA DE NO ADEUDO',aldia:'CONSTANCIA DE CUENTA AL DÍA',saldo:'CONSTANCIA DE SALDO PENDIENTE'}[tipo];}
   const parrafos=fillTokens(getPlantilla(key),ctx).split('\n').filter(s=>s.trim()).map(t=>`<p>${t}</p>`).join('');
   const firmante=(STATE.role&&STATE.role.id==='super')?STATE.role.user:'Daniel Monge';
@@ -1027,7 +1048,7 @@ function frame(o){
 }
 function preview(cod){
   const rep=REPS.find(r=>r.cod===cod), tipo=STATE.tipo, p=PAISES[rep.pais];
-  const variante=tipo==='cobro'?variantePorPD(rep.inact):null;
+  const variante=tipo==='cobro'?variantePorPD(rep.inact,rep.estatus):null;
   document.getElementById('modal').innerHTML=`
     <div class="modal-h">${svg(ICO.letter,18)}<div><h3>Vista previa de carta</h3></div>
       <div class="x" onclick="closeModal()">${svg(ICO.x,16)}</div></div>
@@ -1083,7 +1104,7 @@ function viewAuth(){
   if(STATE.role.id==='gestor'){document.getElementById('view').innerHTML=
     `<div class="empty glass" style="padding:70px">${svg(ICO.shield,46)}<h3>Solo supervisión</h3><p>La autorización está reservada a quienes tienen rango de firma.</p></div>`;return;}
   const pend=REPS.slice(0,4).map((r,i)=>{
-    const p=PAISES[r.pais], v=variantePorPD(r.inact);
+    const p=PAISES[r.pais], v=variantePorPD(r.inact,r.estatus);
     return {rep:r,p,v,num:`${r.pais}-2026-0${148+i}`};
   });
   const tieneFirma=!!STATE.firmas[STATE.role.user];
@@ -1132,7 +1153,7 @@ function reject(btn){btn.closest('.auth-card').style.opacity='0';setTimeout(()=>
 
 /* ============ HISTORIAL ============ */
 function tipoLabel(rep,tipo){
-  if(tipo==='cobro'){const v=variantePorPD(rep.inact);return 'Cobro · '+v.nombre.split(' ')[0];}
+  if(tipo==='cobro'){const v=variantePorPD(rep.inact,rep.estatus);return 'Cobro · '+v.nombre.split(' ')[0];}
   return TIPOS[tipo].nombre;
 }
 function fmtFecha(f){const[y,m,d]=f.split('-');return `${d}/${m}/${y}`;}
@@ -1287,7 +1308,7 @@ async function descargarZip(n){
 /* ============ VISOR DE CARTA ============ */
 function showLetter(cod,tipo,num){
   const rep=REPS.find(r=>r.cod===cod); if(!rep){toast('info','Carta no disponible');return;}
-  const p=PAISES[rep.pais], variante=tipo==='cobro'?variantePorPD(rep.inact):null;
+  const p=PAISES[rep.pais], variante=tipo==='cobro'?variantePorPD(rep.inact,rep.estatus):null;
   document.getElementById('modal').innerHTML=`
     <div class="modal-h">${svg(ICO.letter,18)}<div><h3>${TIPOS[tipo].nombre}${variante?' · '+variante.nombre:''}</h3></div>
       <div class="x" onclick="closeModal()">${svg(ICO.x,16)}</div></div>
@@ -1376,7 +1397,7 @@ function viewRecop(){
     <div class="panel glass">
       <div class="panel-h"><h3>Plantilla de recopilación</h3>
         ${STATE.recopSubida?`<span class="pill ok">${svg(ICO.check,12)} Enviada</span>`:`<span class="pill warn">${svg(ICO.bell,12)} Pendiente</span>`}</div>
-      <p style="font-size:13px;color:var(--txt-2);line-height:1.65;margin-bottom:18px">Descarga la plantilla, coloca los <b>códigos</b> de tus representantes y el <b>país</b> (respeta las mayúsculas). Súbela en tu corte y entrará automáticamente al <b>consolidado</b> de Supervisión.</p>
+      <p style="font-size:13px;color:var(--txt-2);line-height:1.65;margin-bottom:18px">Descarga la plantilla y coloca <b>código</b>, <b>país</b> y el <b>PD</b> de cada representante (según su estatus: A → PD1–3, C → PD4–7, o M/R para recovery). Súbela en tu corte y entrará automáticamente al <b>consolidado</b> de Supervisión.</p>
       <div style="display:flex;gap:10px">
         <button class="btn ghost" onclick="downloadPlantilla()">${svg(ICO.down)} Descargar plantilla</button>
         <label class="btn primary" style="cursor:pointer">
@@ -1384,7 +1405,7 @@ function viewRecop(){
           ${svg(ICO.upload)} Subir mi plantilla</label>
       </div>
       <div style="margin-top:18px;padding:14px;border-radius:12px;background:rgba(255,255,255,.03);border:1px solid var(--stroke);font-family:'JetBrains Mono';font-size:12px;color:var(--txt-2);line-height:1.7">
-        Codigo,Pais<br>1210802,Guatemala<br>2098771,El Salvador<br><span style="color:var(--txt-3)">…</span>
+        Codigo,Pais,PD<br>1210802,Guatemala,PD2<br>2098771,El Salvador,PD5<br><span style="color:var(--txt-3)">…</span>
       </div>
     </div>
     <div class="panel glass">
@@ -1398,7 +1419,7 @@ function viewRecop(){
   </div>`;
 }
 function downloadPlantilla(){
-  const csv='Codigo,Pais\n,\n,\n';
+  const csv='Codigo,Pais,PD\n,,\n,,\n';
   const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
   a.download='plantilla_recopilacion.csv';a.click();
