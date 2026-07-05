@@ -441,7 +441,7 @@ const VARIANTES = [
   {id:'escalamiento',nombre:'Aviso de Escalamiento',estatus:'C',pdMin:6,pdMax:6,tono:'Fuerte'},
   {id:'prejuridica',nombre:'Notificación Prejurídica',estatus:'C',pdMin:7,pdMax:7,tono:'Máxima presión'},
 ];
-const RECOVERY={id:'recovery',nombre:'Recovery (gestión especial)',tono:'Fuera de las 4 variantes estándar'};
+const RECOVERY={id:'recovery',nombre:'Reserva (etapa jurídica)',tono:'Máxima firmeza · cuenta trasladada a legal'};
 function variantePorPD(pd,estatus){
   if(estatus==='M'||estatus==='R') return RECOVERY;
   const v=VARIANTES.find(v=>pd>=v.pdMin&&pd<=v.pdMax);
@@ -798,7 +798,61 @@ function viewUpload(){
       </div>
     </div>
     <div id="baseSummary"></div>
+  </div>
+
+  <div class="panel glass" style="margin-top:14px">
+    <div class="panel-h"><div><h3>3 · Fusionar el PD del consolidado</h3>
+      <div style="font-size:12px;color:var(--txt-3);margin-top:3px">El query trae datos generales pero <b>no el PD exacto</b>. Sube aquí el consolidado (Código, País, PD) para completar cada cuenta.</div></div></div>
+    <div style="padding:12px;border-radius:10px;background:rgba(56,189,248,.06);border:1px solid rgba(56,189,248,.16);font-size:12.5px;color:var(--txt-2);margin-bottom:14px;line-height:1.6">
+      ${svg(ICO.bolt,14)} El sistema empareja cada fila por <b>Código + País</b> y le asigna el PD (o M/R) que colocó el gestor. Las cuentas sin coincidencia quedan marcadas para revisar.
+    </div>
+    <input type="file" id="pdFile" accept=".xlsx,.xls,.csv" style="display:none" onchange="fusionarPD(event)">
+    <div style="display:flex;gap:10px">
+      <button class="btn primary" onclick="document.getElementById('pdFile').click()">${svg(ICO.upload)} Subir consolidado con PD</button>
+      <button class="btn ghost" onclick="downloadConsolidado(REPS.length)">${svg(ICO.down)} Descargar consolidado actual</button>
+    </div>
+    <div id="pdSummary"></div>
   </div>`;
+}
+function fusionarPD(ev){
+  const file=ev.target.files[0]; if(!file)return;
+  const reader=new FileReader();
+  const process=(wbOrText,isCsv)=>{
+    let rows;
+    if(isCsv){
+      rows=wbOrText.split('\n').map(l=>l.split(',').map(c=>c.trim())).filter(r=>r.length>1&&r[0]!=='');
+    }else{
+      const ws=wbOrText.Sheets[wbOrText.SheetNames[0]];
+      rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:''}).filter(r=>r.some(c=>c!==''));
+    }
+    const headers=rows[0].map(h=>String(h).trim().toUpperCase());
+    const iC=headers.findIndex(h=>h.includes('CODIGO')||h.includes('CÓDIGO'));
+    const iP=headers.findIndex(h=>h.includes('PAIS')||h.includes('PAÍS'));
+    const iPD=headers.findIndex(h=>h==='PD');
+    let ok=0, sinMatch=[];
+    rows.slice(1).forEach(r=>{
+      const cod=String(r[iC]||'').trim(), paisTxt=String(r[iP]||'').trim().toUpperCase();
+      const iso=PAIS_A_ISO[paisTxt]||(PAISES[paisTxt]?paisTxt:null);
+      const pdTxt=String(r[iPD]||'').trim().toUpperCase();
+      if(!cod||!iso) return;
+      const rep=REPS.find(x=>x.cod===cod&&x.pais===iso);
+      if(!rep){ sinMatch.push(`${cod} (${paisTxt})`); return; }
+      if(pdTxt==='M'||pdTxt==='R'){ rep.estatus=pdTxt; rep.inact=0; }
+      else{ const n=parseInt(pdTxt.replace(/[^\d]/g,'')); if(!isNaN(n)) rep.inact=n; }
+      rep.pdFaltante=false; ok++;
+    });
+    document.getElementById('pdSummary').innerHTML=`
+      <div style="margin-top:14px;padding:12px;border-radius:10px;background:rgba(52,211,153,.06);border:1px solid rgba(52,211,153,.18);font-size:12.5px;color:var(--txt-2)">
+        ${svg(ICO.check,14)} <b style="color:var(--ok)">${ok} cuentas actualizadas</b> con su PD real.
+        ${sinMatch.length?`<div style="margin-top:8px;color:var(--warn)">⚠ ${sinMatch.length} sin coincidencia en la base: ${sinMatch.slice(0,8).join(', ')}${sinMatch.length>8?'…':''}</div>`:''}
+      </div>`;
+    toast('ok',`PD fusionado · ${ok} cuentas listas para generar`);
+  };
+  if(file.name.toLowerCase().endsWith('.csv')){
+    reader.onload=()=>process(reader.result,true); reader.readAsText(file);
+  }else{
+    reader.onload=()=>process(XLSX.read(reader.result,{type:'array'}),false); reader.readAsArrayBuffer(file);
+  }
 }
 function downloadConsolidado(n){
   let csv='Codigo,Pais,PD\n';
@@ -993,9 +1047,9 @@ saldo:`A quien corresponda:
 El presente documento se extiende para que la representante pueda efectuar el pago correspondiente a través de {{CANALES_PAGO}}, indicando como referencia su código de representante {{CODIGO}}.
 Se extiende en la ciudad de {{CIUDAD}}, el {{FECHA}}.`,
 recovery:`Estimada(o) Representante:
-Su cuenta se encuentra en un estatus de gestión especial (Recovery) dentro de {{ENTIDAD}}, correspondiente a la campaña {{CAMPANA}}.
-Le solicitamos comunicarse a la brevedad con nuestro equipo de cobros para conocer el detalle de su situación y las opciones disponibles para regularizarla.
-[Texto pendiente de validar por Supervisión — plantilla provisional para estatus M/R.]`
+Le notificamos que, conforme a nuestros registros, su cuenta ha sido trasladada a la etapa de Reserva (gestión jurídica) dentro de {{ENTIDAD}}, en virtud del saldo vencido correspondiente a la campaña {{CAMPANA}}.
+Esta comunicación constituye un último requerimiento de pago antes de continuar con las acciones legales que correspondan conforme al contrato de compraventa suscrito.
+Le exhortamos a comunicarse de inmediato con nuestro equipo de cobros para regularizar su situación y evitar mayores consecuencias.`
 };
 let PLANTILLAS=Object.assign({},PLANTILLAS_BASE);
 function getPlantilla(k){return (STATE.plantillas&&STATE.plantillas[k]!=null)?STATE.plantillas[k]:(PLANTILLAS[k]||PLANTILLAS_BASE[k]);}
@@ -1554,6 +1608,7 @@ const PL_ITEMS=[
   {k:'requerimiento',n:'Cobro · Requerimiento Formal',pd:'C · PD4–5'},
   {k:'escalamiento',n:'Cobro · Aviso de Escalamiento',pd:'C · PD6'},
   {k:'prejuridica',n:'Cobro · Notificación Prejurídica',pd:'C · PD7'},
+  {k:'recovery',n:'Cobro · Reserva (etapa jurídica)',pd:'M / R'},
   {k:'finiquito',n:'Finiquito',pd:'saldo 0'},
   {k:'aldia',n:'Confirmación de Cuenta al Día',pd:'al día'},
   {k:'saldo',n:'Constancia de Saldo Pendiente',pd:'saldo > 0'},
@@ -1591,7 +1646,7 @@ function savePlantilla(k){
 function resetPlantilla(k){delete STATE.plantillas[k];toast('info','Plantilla restaurada al texto original');viewPlantillas();}
 function showLetterDemo(k){
   const ta=document.getElementById('pl_'+k); if(ta) STATE.plantillas[k]=ta.value;
-  const cobro={recordatorio:r=>r.inact>=1&&r.inact<=3,requerimiento:r=>r.inact>=4&&r.inact<=5,escalamiento:r=>r.inact===6,prejuridica:r=>r.inact===7};
+  const cobro={recordatorio:r=>r.inact>=1&&r.inact<=3,requerimiento:r=>r.inact>=4&&r.inact<=5,escalamiento:r=>r.inact===6,prejuridica:r=>r.inact===7,recovery:r=>r.estatus==='M'||r.estatus==='R'};
   let rep,tipo;
   if(cobro[k]){tipo='cobro';rep=REPS.find(cobro[k])||REPS.find(r=>r.balance>0);}
   else{tipo=k;rep=REPS.find(r=>(k==='finiquito'||k==='aldia')?r.balance<=0:r.balance>0)||REPS[0];}
