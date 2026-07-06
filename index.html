@@ -392,6 +392,7 @@ tbody tr.blocked{opacity:.62}
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
+
 /* ============ Cartera · CRM de cartas (prototipo demo) ============ */
 
 const ICO = {
@@ -424,7 +425,7 @@ let PAISES = {
   HD:{nombre:'Honduras',ciudad:'Tegucigalpa',entidad:'Productos Avon, S.A. de C.V.',moneda:'L',cod:'504'},
   NC:{nombre:'Nicaragua',ciudad:'Managua',entidad:'Productos Avon de Nicaragua, S.A.',moneda:'C$',cod:'505'},
   PA:{nombre:'Panamá',ciudad:'Ciudad de Panamá',entidad:'Productos Avon, S.A.',moneda:'B/.',cod:'507'},
-  RD:{nombre:'Rep. Dominicana',ciudad:'Santo Domingo',entidad:'Productos Avon Dominicana, S.A.',moneda:'RD$',cod:'1809'},
+  RD:{nombre:'Rep. Dominicana',ciudad:'Santo Domingo',entidad:'Productos Avon, S.A.',moneda:'RD$',cod:'1809'},
 };
 
 /* ---------- tipos de carta ---------- */
@@ -483,7 +484,7 @@ let USUARIOS = [
 ];
 
 /* ---------- accesos (login) ---------- */
-const PRUEBAS = true; // sin claves durante pruebas · en producción se piden Avon+código
+const PRUEBAS = false; // PRODUCCION: gestores con Avon+codigo · supervision con su clave
 const ROLES = [
   {id:'gestor',nombre:'Gestor de Cobros',ico:ICO.user,desc:'Genera cartas de su cartera y registra el envío y seguimiento de cada una.',who:GESTORES.length+' gestores',user:'Sherly Cotom Mateo',av:'SC'},
   {id:'super',nombre:'Supervisión',ico:ICO.shield,desc:'Visión completa: autoriza, firma y administra personas, plantillas y configuración.',who:'Daniel · Oliver · Henry',user:'Daniel Monge',av:'DM'},
@@ -595,7 +596,10 @@ function doLogin(id){
     STATE.role={id:'gestor',nombre:'Gestor de Cobros',user:g.nombre,av:iniciales(g.nombre),cod:g.cod};
   }else{
     const nm=document.getElementById('loginUser').value, s=SUPERVISION.find(x=>x.nombre===nm);
-    if(!PRUEBAS && !(document.getElementById('loginKey').value||'').trim()){toast('info','Ingresa tu clave');return;}
+    if(!PRUEBAS){
+      const k=(document.getElementById('loginKey').value||'').trim();
+      if(k!=='AvonVD2026'){toast('info','Clave de supervisión incorrecta');return;}
+    }
     STATE.role={id:'super',nombre:s.cargo,user:s.nombre,av:iniciales(s.nombre)};
   }
   enterApp();
@@ -921,7 +925,9 @@ async function cargarBaseReal(ev){
       else if(!f.pais) errores.push(`Fila ${idx+2}: país "${f.paisTexto}" no reconocido`);
       else parsed.push(f);
     });
-    if(parsed.length){ REPS.length=0; parsed.forEach(p=>REPS.push(p)); }
+    if(parsed.length){ REPS.length=0; parsed.forEach(p=>REPS.push(p));
+      dbGuardarRepresentantes(parsed).then(r=>{ if(r.ok) toast('ok','Base sincronizada en Supabase · visible para todos'); else if(SB_OK) toast('info','Base local OK · no se sincronizó: '+r.msg); });
+    }
     const porPais={}; parsed.forEach(p=>{porPais[p.pais]=(porPais[p.pais]||0)+1;});
     const sinPD=parsed.filter(p=>p.pdFaltante).length;
     document.getElementById('baseDropTitle').textContent='Sube la base del query SQL (.xlsx o .csv)';
@@ -1133,76 +1139,93 @@ function preview(cod){
 function closeModal(){document.getElementById('overlay').classList.remove('show');}
 
 /* ---------- generación por lotes ---------- */
-function generarLote(){
+async function generarLote(){
   const n=STATE.sel.size;
+  const seleccion=[...STATE.sel].map(cod=>REPS.find(r=>r.cod===cod)).filter(Boolean);
   document.getElementById('modal').innerHTML=`<div class="gen-prog">
     <div class="gen-ring"><svg width="90" height="90"><circle cx="45" cy="45" r="38" stroke="rgba(255,255,255,.1)" stroke-width="6" fill="none"/>
       <circle id="ring" cx="45" cy="45" r="38" stroke="url(#g)" stroke-width="6" fill="none" stroke-linecap="round" stroke-dasharray="239" stroke-dashoffset="239"/>
       <defs><linearGradient id="g"><stop offset="0" stop-color="#2DD4BF"/><stop offset="1" stop-color="#38BDF8"/></linearGradient></defs></svg>
       <div class="pct" id="pct">0%</div></div>
-    <h3>Generando ${n} cartas</h3><p id="genmsg">Validando y numerando…</p></div>`;
+    <h3>Generando ${n} cartas</h3><p id="genmsg">Numerando con correlativo atómico…</p></div>`;
   document.getElementById('overlay').classList.add('show');
-  let i=0; const ring=document.getElementById('ring');
-  const tick=setInterval(()=>{
-    i++; const pct=Math.round((i/n)*100);
-    document.getElementById('pct').textContent=pct+'%';
-    document.getElementById('genmsg').textContent=`Carta ${i} de ${n} · numerada y firmada`;
-    ring.style.strokeDashoffset=239-(239*pct/100);
-    if(i>=n){clearInterval(tick);setTimeout(()=>{closeModal();STATE.sel.clear();
-      toast('ok',`${n} cartas generadas y enviadas a autorización`);go('auth');},500);}
-  },Math.max(120,700/n));
+  const ring=document.getElementById('ring');
+  let emitidas=0, errores=0;
+  for(let i=0;i<seleccion.length;i++){
+    const rep=seleccion[i];
+    const res=await dbEmitirCarta(rep,STATE.tipo,STATE.role.user);
+    if(res.db){
+      emitidas++;
+      CARTAS.unshift({num:res.num,cod:rep.cod,tipo:STATE.tipo,gestor:STATE.role.user,
+        fecha:new Date().toISOString().slice(0,10),autorizo:'—',entrega:'emitida',canal:null,evid:false,estado:'pendiente'});
+    } else { errores++; }
+    const pct=Math.round(((i+1)/n)*100);
+    const pc=document.getElementById('pct'),ms=document.getElementById('genmsg');
+    if(pc)pc.textContent=pct+'%';
+    if(ms)ms.textContent=`Carta ${i+1} de ${n} · ${res.num}${res.db?'':' (no guardada)'}`;
+    if(ring)ring.style.strokeDashoffset=239-(239*pct/100);
+  }
+  closeModal(); STATE.sel.clear();
+  if(SB_OK&&emitidas) toast('ok',`${emitidas} cartas emitidas y guardadas · pendientes de autorización`);
+  else if(!SB_OK) toast('info',`${n} cartas simuladas (sin conexión · no se guardaron)`);
+  if(errores) toast('info',`${errores} cartas no se pudieron guardar`);
+  go(STATE.role.id==='super'?'auth':'hist');
 }
 
 /* ============ AUTORIZACIÓN ============ */
 function viewAuth(){
   if(STATE.role.id==='gestor'){document.getElementById('view').innerHTML=
     `<div class="empty glass" style="padding:70px">${svg(ICO.shield,46)}<h3>Solo supervisión</h3><p>La autorización está reservada a quienes tienen rango de firma.</p></div>`;return;}
-  const pend=REPS.slice(0,4).map((r,i)=>{
-    const p=PAISES[r.pais], v=variantePorPD(r.inact,r.estatus);
-    return {rep:r,p,v,num:`${r.pais}-2026-0${148+i}`};
-  });
+  const pend=CARTAS.filter(c=>c.estado==='pendiente').map(x=>{
+    const rep=REPS.find(r=>r.cod===x.cod)||(x.snapshot&&x.snapshot.rep)||{nombre:'(carta de otra base)',balance:0,estatus:'A',inact:1,pais:'GT',cod:x.cod};
+    return Object.assign({},x,{rep,p:PAISES[rep.pais]||PAISES.GT,v:x.tipo==='cobro'?variantePorPD(rep.inact,rep.estatus):{nombre:TIPOS[x.tipo]?TIPOS[x.tipo].nombre:x.tipo}});});
   const tieneFirma=!!STATE.firmas[STATE.role.user];
   document.getElementById('view').innerHTML=`
   <div class="toolbar">
     ${!tieneFirma?`<div style="flex:1;padding:11px 16px;border-radius:12px;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.22);font-size:12.5px;color:var(--warn);display:flex;align-items:center;gap:9px">
-      ${svg(ICO.bell,15)} Aún no has cargado tu firma · al aprobar se usará tu firma registrada. <span style="text-decoration:underline;cursor:pointer" onclick="go('firma')">Cargar firma</span></div>`
+      ${svg(ICO.bell,15)} Aún no has cargado tu firma. <span style="text-decoration:underline;cursor:pointer" onclick="go('firma')">Cargar firma</span></div>`
     :`<div style="flex:1;font-size:12.5px;color:var(--txt-2);display:flex;align-items:center;gap:9px">${svg(ICO.check,15)} Firma de ${STATE.role.user.split(' ')[0]} lista · se estampará en cada carta aprobada.</div>`}
-    <button class="btn primary" onclick="approveAll()">${svg(ICO.all)} Autorizar todas (${pend.length})</button>
+    <button class="btn primary" ${pend.length?'':'disabled'} onclick="approveAll()">${svg(ICO.all)} Autorizar todas (${pend.length})</button>
   </div>
-  <div class="auth-grid">${pend.map(x=>`
-    <div class="auth-card glass" data-cod="${x.rep.cod}">
+  ${pend.length?`<div class="auth-grid">${pend.map(x=>`
+    <div class="auth-card glass" data-num="${x.num}">
       <div class="ah"><div class="lett-ico">${svg(ICO.letter,18)}</div><span class="num">${x.num}</span></div>
       <h4>${x.v.nombre}</h4>
       <div style="font-size:12.5px;color:var(--txt-2)">${x.rep.nombre}</div>
       <div class="meta-row">
         <span class="mtag">${x.p.nombre}</span>
         <span class="mtag">${money(x.p.moneda,x.rep.balance)}</span>
-        <span class="mtag">${x.rep.estatus}·PD${x.rep.inact}</span>
+        <span class="mtag">${x.rep.estatus==='M'||x.rep.estatus==='R'?x.rep.estatus:('PD'+x.rep.inact)}</span>
       </div>
       <div class="auth-actions">
         <button class="btn sm ok" onclick="approve(this,'${x.num}')">${svg(ICO.check,15)} Aprobar</button>
-        <button class="btn sm ghost" style="flex:0 0 auto" onclick="showLetter('${x.rep.cod}','cobro')">Ver</button>
+        <button class="btn sm ghost" style="flex:0 0 auto" onclick="showLetter('${x.rep.cod}','${x.tipo||'cobro'}','${x.num}')">Ver</button>
         <button class="btn sm no" onclick="reject(this)">${svg(ICO.x,15)}</button>
       </div>
-    </div>`).join('')}</div>`;
+    </div>`).join('')}</div>`
+  :`<div class="empty glass" style="padding:70px">${svg(ICO.check,46)}<h3>Todo al día</h3><p>No hay cartas pendientes de autorización.</p></div>`}`;
 }
-function approveAll(){
+async function approveAll(){
   const cards=[...document.querySelectorAll('.auth-card')];
   if(!cards.length){toast('info','No hay cartas pendientes');return;}
-  cards.forEach((c,i)=>setTimeout(()=>{
-    c.style.transition='.4s';c.style.opacity='0';c.style.transform='scale(.96)';
-    setTimeout(()=>{c.remove();
-      if(!document.querySelector('.auth-card'))document.getElementById('view').innerHTML=
-        `<div class="empty glass" style="padding:70px">${svg(ICO.check,46)}<h3>Todo al día</h3><p>No hay cartas pendientes de autorización.</p></div>`;
-    },400);
-  },i*140));
-  setTimeout(()=>toast('ok',`${cards.length} cartas autorizadas y firmadas`),cards.length*140+200);
+  for(const c of cards){
+    const num=c.dataset.num;
+    await dbAprobar(num,STATE.role.user);
+    const cc=CARTAS.find(x=>x.num===num); if(cc){cc.estado='aprobada';cc.autorizo=STATE.role.user;}
+    c.style.transition='.3s';c.style.opacity='0';
+    await new Promise(r=>setTimeout(r,160)); c.remove();
+  }
+  toast('ok',`${cards.length} cartas autorizadas y firmadas por ${STATE.role.user.split(' ')[0]}`);
+  viewAuth();
 }
-function approve(btn,num){btn.closest('.auth-card').style.transition='.4s';btn.closest('.auth-card').style.opacity='0';
-  btn.closest('.auth-card').style.transform='scale(.96)';
-  setTimeout(()=>{btn.closest('.auth-card').remove();toast('ok',`${num} aprobada y firmada`);
-    if(!document.querySelector('.auth-card'))document.getElementById('view').innerHTML=
-      `<div class="empty glass" style="padding:70px">${svg(ICO.check,46)}<h3>Todo al día</h3><p>No hay cartas pendientes de autorización.</p></div>`;},400);}
+async function approve(btn,num){
+  const card=btn.closest('.auth-card');
+  await dbAprobar(num,STATE.role.user);
+  const cc=CARTAS.find(x=>x.num===num); if(cc){cc.estado='aprobada';cc.autorizo=STATE.role.user;}
+  card.style.transition='.4s';card.style.opacity='0';card.style.transform='scale(.96)';
+  setTimeout(()=>{card.remove();toast('ok',`${num} aprobada y firmada`);
+    if(!document.querySelector('.auth-card'))viewAuth();},400);
+}
 function reject(btn){btn.closest('.auth-card').style.opacity='0';setTimeout(()=>{btn.closest('.auth-card').remove();toast('info','Carta rechazada con motivo');},400);}
 
 /* ============ HISTORIAL ============ */
@@ -1251,8 +1274,9 @@ function accionEntrega(c,isSuper){
   else if(c.entrega==='entregada') acc=`<button class="btn sm ok" style="padding:6px 11px;flex:0" onclick="avanzaEntrega('${c.num}','respondida')">${svg(ICO.check,13)} Con respuesta</button>`;
   return `<div style="display:flex;gap:6px;justify-content:flex-end">${evid}${acc}${ver}</div>`;
 }
-function avanzaEntrega(num,nuevo){
+async function avanzaEntrega(num,nuevo){
   const c=CARTAS.find(x=>x.num===num); c.entrega=nuevo;
+  await dbEntrega(num,nuevo,null,null);
   toast('ok', nuevo==='enviada_gerente'?'Marcada como enviada a la gerente de zona':'Marcada con respuesta de la representante');
   viewHist();
 }
@@ -1284,16 +1308,21 @@ function modalEntrega(num){
 }
 function onEvid(e){
   if(!e.target.files[0])return;
-  entregaTmp.file=true;
+  entregaTmp.file=true; entregaTmp.fileObj=e.target.files[0];
   document.getElementById('evidTitle').textContent='✓ '+e.target.files[0].name.slice(0,32);
   document.getElementById('evidDrop').style.borderColor='var(--ok)';
   document.getElementById('btnEntrega').disabled=false;
 }
-function confirmEntrega(){
+async function confirmEntrega(){
   if(!entregaTmp.file){toast('info','Adjunta la evidencia primero');return;}
   const c=CARTAS.find(x=>x.num===entregaTmp.num);
+  const btn=document.getElementById('btnEntrega'); if(btn){btn.disabled=true;btn.innerHTML='Subiendo evidencia…';}
+  let path=null;
+  if(SB_OK&&entregaTmp.fileObj) path=await dbSubirEvidencia(entregaTmp.num,entregaTmp.fileObj);
+  await dbEntrega(entregaTmp.num,'entregada',entregaTmp.canal,path||('local_'+Date.now()));
   c.entrega='entregada'; c.canal=entregaTmp.canal; c.evid=true;
-  closeModal(); toast('ok',`Entrega registrada · ${CANALES[entregaTmp.canal]} · con evidencia`);
+  closeModal();
+  toast('ok',`Entrega registrada · ${CANALES[entregaTmp.canal]}${path?' · evidencia en Supabase':''}`);
   viewHist();
 }
 /* ============ GENERACIÓN REAL DE PDF ============ */
@@ -1425,7 +1454,9 @@ function viewFirma(){
 function onFirma(e){
   const f=e.target.files[0]; if(!f)return;
   const r=new FileReader();
-  r.onload=()=>{STATE.firmas[STATE.role.user]=r.result;toast('ok','Firma cargada · se aplicará a tus cartas');viewFirma();};
+  r.onload=async()=>{STATE.firmas[STATE.role.user]=r.result;
+    const ok=await dbSubirFirma(STATE.role.user,r.result);
+    toast('ok', ok?'Firma guardada en Supabase · se aplicará a tus cartas':'Firma cargada (local)');viewFirma();};
   r.readAsDataURL(f);
 }
 
@@ -1782,11 +1813,125 @@ window.addEventListener('unhandledrejection',ev=>{
   const msg=(ev&&ev.reason&&ev.reason.message)||'';
   if(msg.includes('could not be cloned')||msg.includes('postMessage')){ev.preventDefault();}
 });
+/* ============ PERSISTENCIA REAL (cartas, base, evidencias, firmas) ============ */
+async function dbCargarRepresentantes(){
+  if(!SB_OK||!sb) return false;
+  try{
+    const {data,error}=await sb.from('cartera_representantes').select('*').order('id',{ascending:true}).limit(3000);
+    if(error||!data||!data.length) return false;
+    REPS.length=0;
+    data.forEach(r=>REPS.push({cod:r.codigo,pais:r.pais,zona:r.zona||'—',nombre:r.nombre||'(sin nombre)',
+      estatus:r.estatus||'A',inact:r.pd||0,balance:parseFloat(r.balance)||0,camp:r.campania||'—',
+      cedula:r.cedula||'—',prev:[]}));
+    return true;
+  }catch(e){return false;}
+}
+async function dbGuardarRepresentantes(parsed){
+  if(!SB_OK||!sb) return {ok:false,msg:'sin conexión'};
+  try{
+    await sb.from('cartera_representantes').delete().gte('id',0);
+    const filas=parsed.map(p=>({codigo:p.cod,pais:p.pais,zona:p.zona,nombre:p.nombre,estatus:p.estatus,
+      pd:p.inact,inactividades:p.inactividadesInfo,balance:p.balance,cedula:p.cedula,campania:p.camp}));
+    for(let i=0;i<filas.length;i+=200){
+      const {error}=await sb.from('cartera_representantes').insert(filas.slice(i,i+200));
+      if(error) return {ok:false,msg:error.message};
+    }
+    return {ok:true};
+  }catch(e){return {ok:false,msg:e.message};}
+}
+async function dbCargarCartas(){
+  if(!SB_OK||!sb) return false;
+  try{
+    const {data,error}=await sb.from('cartera_cartas').select('*').order('creada_en',{ascending:false}).limit(1000);
+    if(error) return false;
+    CARTAS.length=0;
+    (data||[]).forEach(c=>{
+      CARTAS.push({num:c.num_correlativo,cod:c.rep_codigo,tipo:c.tipo,gestor:(c.snapshot&&c.snapshot.gestor)||'—',
+        fecha:String(c.fecha_emision||c.creada_en||'').slice(0,10),autorizo:(c.snapshot&&c.snapshot.autorizo)||'—',
+        entrega:c.entrega_estado||'emitida',canal:c.canal,evid:!!c.evidencia_path,estado:c.estado,
+        dbId:c.id,snapshot:c.snapshot});
+      if(c.snapshot&&c.snapshot.rep&&!REPS.find(r=>r.cod===c.rep_codigo&&r.pais===c.snapshot.rep.pais)){
+        REPS.push(c.snapshot.rep);
+      }
+    });
+    return true;
+  }catch(e){return false;}
+}
+async function dbEmitirCarta(rep,tipo,gestorNombre){
+  if(!SB_OK||!sb) return {num:correlativo(rep),db:false};
+  try{
+    const {data:num,error:e1}=await sb.rpc('cartera_siguiente_correlativo',{p_pais:rep.pais});
+    if(e1) throw e1;
+    const p=PAISES[rep.pais];
+    const ref=`${p.cod}.102.${rep.zona}.${rep.cod}.${(parseInt(String(rep.cod).slice(-4))%90000+10000)}`;
+    const v=tipo==='cobro'?variantePorPD(rep.inact,rep.estatus):null;
+    const {error:e2}=await sb.from('cartera_cartas').insert({
+      num_correlativo:num,ref_archivo:ref,rep_codigo:rep.cod,pais:rep.pais,tipo:tipo,
+      variante:v?v.id:null,fecha_emision:new Date().toISOString().slice(0,10),
+      estado:'pendiente',entrega_estado:'emitida',
+      snapshot:{rep:Object.assign({},rep,{prev:[]}),gestor:gestorNombre,plantilla:getPlantilla(v?v.id:tipo)}});
+    if(e2) throw e2;
+    return {num:num,db:true};
+  }catch(e){return {num:correlativo(rep),db:false,err:e.message};}
+}
+async function dbAprobar(num,quien){
+  if(!SB_OK||!sb) return false;
+  try{
+    const {data}=await sb.from('cartera_cartas').select('snapshot').eq('num_correlativo',num).single();
+    const snap=(data&&data.snapshot)||{}; snap.autorizo=quien;
+    const {error}=await sb.from('cartera_cartas').update({estado:'aprobada',snapshot:snap}).eq('num_correlativo',num);
+    return !error;
+  }catch(e){return false;}
+}
+async function dbEntrega(num,estado,canal,evidPath){
+  if(!SB_OK||!sb) return false;
+  try{
+    const upd={entrega_estado:estado}; if(canal)upd.canal=canal; if(evidPath)upd.evidencia_path=evidPath;
+    const {error}=await sb.from('cartera_cartas').update(upd).eq('num_correlativo',num);
+    return !error;
+  }catch(e){return false;}
+}
+async function dbSubirEvidencia(num,file){
+  if(!SB_OK||!sb) return null;
+  try{
+    const ext=(file.name.split('.').pop()||'bin').toLowerCase();
+    const path=`${num}_${Date.now()}.${ext}`;
+    const {error}=await sb.storage.from('cartera_evidencias').upload(path,file,{upsert:true});
+    return error?null:path;
+  }catch(e){return null;}
+}
+async function dbSubirFirma(nombre,dataUrl){
+  if(!SB_OK||!sb) return false;
+  try{
+    const blob=await (await fetch(dataUrl)).blob();
+    const path=nombre.replace(/\s+/g,'_')+'.png';
+    const {error}=await sb.storage.from('cartera_firmas').upload(path,blob,{upsert:true,contentType:'image/png'});
+    if(error) return false;
+    await sb.from('cartera_usuarios').update({firma_path:path}).eq('nombre',nombre);
+    return true;
+  }catch(e){return false;}
+}
+async function dbCargarFirmas(){
+  if(!SB_OK||!sb) return;
+  try{
+    const {data}=await sb.from('cartera_usuarios').select('nombre,firma_path').not('firma_path','is',null);
+    for(const u of (data||[])){
+      const {data:img}=await sb.storage.from('cartera_firmas').download(u.firma_path);
+      if(img){STATE.firmas[u.nombre]=await new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(img);});}
+    }
+  }catch(e){}
+}
+
 
 /* init */
 renderLogin();
-initSupabase().then(()=>{const lg=document.getElementById('login');if(lg&&!lg.classList.contains('hidden'))renderLogin();});
+initSupabase().then(async()=>{
+  if(SB_OK){ await dbCargarRepresentantes(); await dbCargarCartas(); dbCargarFirmas(); }
+  const lg=document.getElementById('login');
+  if(lg&&!lg.classList.contains('hidden'))renderLogin();
+});
 document.getElementById('overlay').addEventListener('click',e=>{if(e.target.id==='overlay')closeModal();});
+
 
 </script>
 </body>
