@@ -294,18 +294,18 @@ tbody tr.blocked{opacity:.62}
 .modal-h .x{margin-left:auto;cursor:pointer;color:var(--txt-3);padding:7px;border-radius:9px}
 .modal-h .x:hover{color:var(--txt);background:rgba(255,255,255,.06)}
 .modal-body{padding:24px;overflow-y:auto;display:flex;gap:22px}
-.letter-frame{flex:1;background:#fff;border-radius:12px;padding:34px 40px;color:#1a1a1a;font-family:Arial,sans-serif;
-  box-shadow:0 20px 60px rgba(0,0,0,.5);min-height:520px;font-size:12.5px;line-height:1.6;overflow:hidden}
+.letter-frame{flex:1;background:#fff;border-radius:12px;padding:52px 58px;color:#1a1a1a;font-family:Arial,sans-serif;
+  box-shadow:0 20px 60px rgba(0,0,0,.5);min-height:1035px;font-size:13.5px;line-height:1.8;overflow:hidden;display:flex;flex-direction:column}
 .letter-frame .lf-head{display:flex;justify-content:flex-end}
 .letter-frame .lf-logo{width:46px;height:46px;border-radius:8px;background:#DA1884;display:grid;place-items:center;color:#fff;font-weight:700;font-family:'Space Grotesk';font-size:13px}
 .letter-frame .lf-rule{border-bottom:2px solid #DA1884;margin:10px 0 22px}
-.letter-frame .lf-title{text-align:center;font-weight:700;font-size:15px;letter-spacing:.5px;margin:6px 0 24px}
-.letter-frame .lf-date{text-align:right;margin-bottom:20px;color:#333}
-.letter-frame p{margin-bottom:13px;text-align:justify}
+.letter-frame .lf-title{text-align:center;font-weight:700;font-size:16px;letter-spacing:.5px;margin:6px 0 26px}
+.letter-frame .lf-date{text-align:right;margin-bottom:24px;color:#333}
+.letter-frame p{margin-bottom:16px;text-align:justify}
 .letter-frame .nm{font-weight:700}
-.letter-frame .lf-sign{margin-top:34px}
-.letter-frame .lf-sline{width:160px;border-top:1px solid #000;margin:40px 0 5px}
-.letter-frame .lf-foot{margin-top:30px;font-size:9px;color:#777;text-align:right;border-top:1px solid #eee;padding-top:8px}
+.letter-frame .lf-sign{margin-top:auto;padding-top:40px}
+.letter-frame .lf-sline{width:220px;border-top:1px solid #000;margin:52px 0 6px}
+.letter-frame .lf-foot{margin-top:26px;font-size:9.5px;color:#777;text-align:right;border-top:1px solid #eee;padding-top:9px}
 .letter-frame .hl{background:#fdeaf4;color:#b5128a;padding:0 3px;border-radius:3px;font-weight:600}
 .preview-side{width:250px;flex-shrink:0}
 .ps-sec{margin-bottom:20px}
@@ -623,7 +623,7 @@ function buildNav(){
     {id:'dash',ic:ICO.dash,t:'Panel'},
     {id:'upload',ic:ICO.upload,t:'Cargar datos'},
     {id:'gen',ic:ICO.gen,t:'Generar cartas'},
-    {id:'auth',ic:ICO.auth,t:'Autorización',badge:'4'},
+    {id:'auth',ic:ICO.auth,t:'Autorización',badge:String(CARTAS.filter(c=>c.estado==='pendiente').length)},
     {id:'hist',ic:ICO.hist,t:'Historial'},
     {id:'plantillas',ic:ICO.doc,t:'Plantillas'},
     {id:'firma',ic:ICO.sign,t:'Mi firma'},
@@ -636,8 +636,8 @@ function buildNav(){
     {id:'hist',ic:ICO.hist,t:'Mis cartas'},
   ];
   document.getElementById('nav').innerHTML=items.map((i,k)=>`
-    <div class="nav-item ${k===0?'active':''}" data-v="${i.id}" onclick="go('${i.id}')">
-      ${svg(i.ic,18)}<span>${i.t}</span>${i.badge?`<span class="badge">${i.badge}</span>`:''}
+    <div class="nav-item ${i.id===STATE.view?'active':(!items.some(x=>x.id===STATE.view)&&k===0?'active':'')}" data-v="${i.id}" onclick="go('${i.id}')">
+      ${svg(i.ic,18)}<span>${i.t}</span>${(i.badge&&i.badge!=='0')?`<span class="badge">${i.badge}</span>`:''}
     </div>`).join('');
 }
 const TITLES={dash:['Panel','Resumen general de la operación'],
@@ -661,70 +661,83 @@ function go(v){
 
 /* ============ DASHBOARD ============ */
 function viewDash(){
-  const total=142, pend=4, block=2;
-  const byCountry=[['GT',38],['SV',24],['HD',29],['NC',18],['PA',15],['RD',18]];
-  const max=Math.max(...byCountry.map(c=>c[1]));
+  const isG=STATE.role.id==='gestor';
+  const misCartas=isG?CARTAS.filter(c=>(c.gestor||'').trim()===(STATE.role.user||'').trim()):CARTAS;
+  const total=misCartas.length;
+  const pend=misCartas.filter(c=>c.estado==='pendiente').length;
+  const aprobadas=misCartas.filter(c=>c.estado==='aprobada').length;
+  const entregadas=misCartas.filter(c=>c.entrega==='entregada'||c.entrega==='respondida').length;
+  const tasaEntrega=total?Math.round((entregadas/total)*100):0;
+
+  const porPais={}; misCartas.forEach(c=>{const iso=c.pais||(REPS.find(r=>r.cod===c.cod)||{}).pais;if(iso)porPais[iso]=(porPais[iso]||0)+1;});
+  const paisEntries=Object.entries(porPais); const maxPais=Math.max(1,...paisEntries.map(([,v])=>v));
+
+  const porTipo={}; misCartas.forEach(c=>{
+    const rep=REPS.find(r=>r.cod===c.cod)||(c.snapshot&&c.snapshot.rep);
+    const lab=rep?tipoLabel(rep,c.tipo):(TIPOS[c.tipo]?TIPOS[c.tipo].nombre:c.tipo);
+    porTipo[lab]=(porTipo[lab]||0)+1;
+  });
+  const tipoEntries=Object.entries(porTipo).sort((a,b)=>b[1]-a[1]); const maxTipo=Math.max(1,...tipoEntries.map(([,v])=>v));
+
+  const recientes=misCartas.slice(0,6).map(c=>{
+    const rep=REPS.find(r=>r.cod===c.cod)||(c.snapshot&&c.snapshot.rep)||{nombre:c.cod};
+    const col=c.estado==='aprobada'?'var(--ok)':(c.estado==='pendiente'?'var(--warn)':'var(--sky)');
+    const txt=c.estado==='aprobada'?`Aprobada por <b>${(c.autorizo||'—').split(' ')[0]}</b>`:(c.estado==='pendiente'?'Pendiente de autorización':'Actividad');
+    return [col, `<b>${c.num}</b> · ${txt} · ${rep.nombre.split(' ').slice(0,2).join(' ')}`, fmtFecha(c.fecha)];
+  });
+
+  const distMora=[['Estatus A · PD1–3',0,'var(--ok)'],['Estatus C · PD4–7',0,'var(--warn)'],['Reserva (M/R)',0,'var(--bad)']];
+  REPS.forEach(r=>{
+    if(r.estatus==='M'||r.estatus==='R') distMora[2][1]++;
+    else if(r.estatus==='A') distMora[0][1]++;
+    else distMora[1][1]++;
+  });
+  const maxMora=Math.max(1,...distMora.map(d=>d[1]));
+
   document.getElementById('view').innerHTML=`
-  ${STATE.role.id==='gestor'?cortesBanner():''}
+  ${isG?cortesBanner():''}
   <div class="kpis">
     <div class="kpi glass sig">
-      <div class="lab"><div class="ic" style="color:var(--teal)">${svg(ICO.doc,15)}</div>${STATE.role.id==='gestor'?'Mis cartas':'Cartas emitidas'}</div>
-      <div class="val">${STATE.role.id==='gestor'?'37':'142'}</div><div class="meta up">▲ ${STATE.role.id==='gestor'?'6':'18'} esta campaña</div></div>
+      <div class="lab"><div class="ic" style="color:var(--teal)">${svg(ICO.doc,15)}</div>${isG?'Mis cartas':'Cartas emitidas'}</div>
+      <div class="val">${total}</div><div class="meta">${total?'total registrado':'aún sin cartas'}</div></div>
+    <div class="kpi glass">
+      <div class="lab"><div class="ic" style="color:var(--sky)">${svg(ICO.check,15)}</div>Autorizadas</div>
+      <div class="val">${aprobadas}</div><div class="meta">firmadas</div></div>
     <div class="kpi glass">
       <div class="lab"><div class="ic" style="color:var(--warn)">${svg(ICO.auth,15)}</div>Pendientes</div>
-      <div class="val">4</div><div class="meta">en espera de firma</div></div>
+      <div class="val">${pend}</div><div class="meta">en espera de firma</div></div>
     <div class="kpi glass">
-      <div class="lab"><div class="ic" style="color:var(--bad)">${svg(ICO.block,15)}</div>Bloqueadas</div>
-      <div class="val">2</div><div class="meta">saldo cero / negativo</div></div>
-    <div class="kpi glass">
-      <div class="lab"><div class="ic" style="color:var(--ok)">${svg(ICO.send,15)}</div>Tasa de envío</div>
-      <div class="val">93<span style="font-size:18px">%</span></div><div class="meta up">▲ 4% vs anterior</div></div>
+      <div class="lab"><div class="ic" style="color:var(--ok)">${svg(ICO.send,15)}</div>Tasa de entrega</div>
+      <div class="val">${tasaEntrega}<span style="font-size:18px">%</span></div><div class="meta">${entregadas} de ${total||0} entregadas</div></div>
   </div>
 
   <div class="grid-2">
     <div class="panel glass">
-      <div class="panel-h"><h3>Cartas por país</h3>
-        <div class="seg"><button class="on">Campaña</button><button>Año</button></div></div>
-      <div class="bars">${byCountry.map(([c,v])=>{
-        const h=(v/max)*100, ok=Math.round(v*.85), bl=v-ok;
-        return `<div class="bar-col"><span class="bar-val">${v}</span>
-          <div class="bar-track">
-            <div class="bar b3" style="height:${(bl/max)*100}%"></div>
-            <div class="bar ${c==='GT'?'b1':'b2'}" style="height:${(ok/max)*100}%"></div>
-          </div><span class="bar-lab">${c}</span></div>`;}).join('')}
-      </div>
-      <div class="legend">
-        <span><i style="background:#2DD4BF"></i>Emitidas y enviadas</span>
-        <span><i style="background:#FB7185"></i>Bloqueadas por saldo</span>
-      </div>
+      <div class="panel-h"><h3>Cartas por país</h3></div>
+      ${paisEntries.length?`<div class="bars">${paisEntries.map(([iso,v])=>`<div class="bar-col"><span class="bar-val">${v}</span>
+          <div class="bar-track"><div class="bar b1" style="height:${(v/maxPais)*100}%"></div></div><span class="bar-lab">${iso}</span></div>`).join('')}</div>`
+      :`<div style="text-align:center;padding:40px;color:var(--txt-3);font-size:13px">Aún no hay cartas emitidas para mostrar por país.</div>`}
     </div>
-
     <div class="panel glass">
       <div class="panel-h"><h3>Por tipo de carta</h3></div>
-      ${[['Cobro · Recordatorio',41,'b1'],['Cobro · Requerimiento',33],['Cobro · Prejurídica',19],['Finiquito',28],['Cuenta al día',12],['Saldo pendiente',9]]
-        .map(([n,v])=>`<div class="type-row"><span class="tn">${n}</span>
-          <div class="tmeter"><i style="width:${(v/41)*100}%"></i></div>
-          <span class="tv">${v}</span></div>`).join('')}
+      ${tipoEntries.length?tipoEntries.map(([n,v])=>`<div class="type-row"><span class="tn">${n}</span>
+          <div class="tmeter"><i style="width:${(v/maxTipo)*100}%"></i></div><span class="tv">${v}</span></div>`).join('')
+      :`<div style="text-align:center;padding:40px;color:var(--txt-3);font-size:13px">Sin datos todavía.</div>`}
     </div>
   </div>
 
   <div class="grid-2">
     <div class="panel glass">
-      <div class="panel-h"><h3>Actividad reciente</h3><span class="hint">Últimas acciones</span></div>
-      ${[['var(--ok)','<b>Daniel Monge</b> autorizó lote de 12 cartas · Guatemala','hace 14 min'],
-         ['var(--sky)','<b>Marta Ríos</b> generó Requerimiento Formal · cód 2150334','hace 38 min'],
-         ['var(--bad)','Bloqueada: Cobro a cód 2061190 · saldo cero','hace 52 min'],
-         ['var(--warn)','<b>4 cartas</b> esperan firma de un supervisor','hace 1 h'],
-         ['var(--ok)','<b>Henry Velásquez</b> firmó 6 finiquitos · El Salvador','hace 2 h']]
-        .map(([c,t,m])=>`<div class="act"><div class="ad" style="background:${c}"></div>
-          <div><div class="at">${t}</div><div class="am">${m}</div></div></div>`).join('')}
+      <div class="panel-h"><h3>Actividad reciente</h3><span class="hint">${isG?'Tus últimas cartas':'Últimas cartas del sistema'}</span></div>
+      ${recientes.length?recientes.map(([c,t,m])=>`<div class="act"><div class="ad" style="background:${c}"></div>
+          <div><div class="at">${t}</div><div class="am">${m}</div></div></div>`).join('')
+      :`<div style="text-align:center;padding:30px;color:var(--txt-3);font-size:13px">Sin actividad todavía.</div>`}
     </div>
     <div class="panel glass">
-      <div class="panel-h"><h3>Distribución por mora</h3><span class="hint">Cuentas activas</span></div>
-      ${[['Estatus A · PD1–3',62,'var(--ok)'],['Estatus C · PD4–5',38,'var(--warn)'],['Estatus C · PD6',22,'#FB923C'],['Estatus C · PD7',20,'var(--bad)']]
-        .map(([n,v,c])=>`<div class="type-row"><span class="tn">${n}</span>
-          <div class="tmeter"><i style="width:${(v/62)*100}%;background:${c}"></i></div>
-          <span class="tv">${v}</span></div>`).join('')}
+      <div class="panel-h"><h3>Distribución por mora</h3><span class="hint">Cuentas en la base cargada (${REPS.length})</span></div>
+      ${REPS.length?distMora.map(([n,v,c])=>`<div class="type-row"><span class="tn">${n}</span>
+          <div class="tmeter"><i style="width:${(v/maxMora)*100}%;background:${c}"></i></div><span class="tv">${v}</span></div>`).join('')
+      :`<div style="text-align:center;padding:30px;color:var(--txt-3);font-size:13px">Carga una base para ver la distribución.</div>`}
       <div style="margin-top:18px;padding:14px;border-radius:12px;background:rgba(45,212,191,.06);border:1px solid rgba(45,212,191,.16);font-size:12.5px;color:var(--txt-2);line-height:1.5">
         ${svg(ICO.bolt,14)} El sistema elige la variante de cobro automáticamente según el tramo de cada cuenta.
       </div>
@@ -1144,7 +1157,7 @@ function letterHTML(rep,tipo,num){
 }
 function frame(o){
   return `<div class="letter-frame">
-    <div style="text-align:right;margin-bottom:8px"><img src="${AVON_LOGO}" style="height:46px;display:inline-block"></div>
+    <div style="text-align:right;margin-bottom:10px"><img src="${AVON_LOGO}" style="height:56px;display:inline-block"></div>
     <div style="border-bottom:2.5px solid #DA1884;margin-bottom:22px"></div>
     ${o.titulo?`<div class="lf-title">${o.titulo}</div>`:''}
     <div class="lf-date">${o.fecha}</div>
@@ -1152,7 +1165,7 @@ function frame(o){
     ${o.asunto?`<p style="margin-bottom:14px"><b>Asunto: ${o.asunto}</b></p>`:''}
     ${o.parrafos}
     <div class="lf-sign"><p>Atentamente,</p>
-      ${(STATE.firmas&&STATE.firmas[o.firmante])?`<img src="${STATE.firmas[o.firmante]}" style="height:46px;margin:4px 0 -4px;display:block">`:''}
+      ${(STATE.firmas&&STATE.firmas[o.firmante])?`<img src="${STATE.firmas[o.firmante]}" style="height:78px;margin:2px 0 -8px;display:block">`:''}
       <div class="lf-sline"></div>
       <p class="nm">${o.firmante}</p><p>${o.cargo}</p><p>${o.entidad}</p>
       <p style="color:#777;font-style:italic;font-size:10px;margin-top:6px">Sello de la empresa</p></div>
@@ -1209,8 +1222,9 @@ async function generarLote(){
     const res=await dbEmitirCarta(rep,STATE.tipo,STATE.role.user);
     if(res.db){
       emitidas++;
-      CARTAS.unshift({num:res.num,cod:rep.cod,tipo:STATE.tipo,gestor:STATE.role.user,
-        fecha:new Date().toISOString().slice(0,10),autorizo:'—',entrega:'emitida',canal:null,evid:false,estado:'pendiente'});
+      CARTAS.unshift({num:res.num,cod:rep.cod,pais:rep.pais,tipo:STATE.tipo,gestor:STATE.role.user,
+        fecha:new Date().toISOString().slice(0,10),autorizo:'—',entrega:'emitida',canal:null,evid:false,estado:'pendiente',
+        snapshot:{rep:Object.assign({},rep,{prev:[]}),gestor:STATE.role.user}});
     } else { errores++; }
     const pct=Math.round(((i+1)/n)*100);
     const pc=document.getElementById('pct'),ms=document.getElementById('genmsg');
@@ -1222,7 +1236,7 @@ async function generarLote(){
   if(SB_OK&&emitidas) toast('ok',`${emitidas} cartas emitidas y guardadas · pendientes de autorización`);
   else if(!SB_OK) toast('info',`${n} cartas simuladas (sin conexión · no se guardaron)`);
   if(errores) toast('info',`${errores} cartas no se pudieron guardar`);
-  go(STATE.role.id==='super'?'auth':'hist');
+  buildNav(); go(STATE.role.id==='super'?'auth':'hist');
 }
 
 /* ============ AUTORIZACIÓN ============ */
@@ -1269,13 +1283,14 @@ async function approveAll(){
     await new Promise(r=>setTimeout(r,160)); c.remove();
   }
   toast('ok',`${cards.length} cartas autorizadas y firmadas por ${STATE.role.user.split(' ')[0]}`);
-  viewAuth();
+  buildNav(); viewAuth();
 }
 async function approve(btn,num){
   const card=btn.closest('.auth-card');
   await dbAprobar(num,STATE.role.user);
   const cc=CARTAS.find(x=>x.num===num); if(cc){cc.estado='aprobada';cc.autorizo=STATE.role.user;}
   card.style.transition='.4s';card.style.opacity='0';card.style.transform='scale(.96)';
+  buildNav();
   setTimeout(()=>{card.remove();toast('ok',`${num} aprobada y firmada`);
     if(!document.querySelector('.auth-card'))viewAuth();},400);
 }
@@ -1286,35 +1301,39 @@ function tipoLabel(rep,tipo){
   if(tipo==='cobro'){const v=variantePorPD(rep.inact,rep.estatus);return 'Cobro · '+v.nombre.split(' ')[0];}
   return TIPOS[tipo].nombre;
 }
-function fmtFecha(f){const[y,m,d]=f.split('-');return `${d}/${m}/${y}`;}
+function fmtFecha(f){if(!f)return '—';const[y,m,d]=String(f).split('-');return `${d}/${m}/${y}`;}
 let HF={desde:'',hasta:'',gestor:'todos'};
 function viewHist(){
   const isSuper=STATE.role.id==='super';
-  let lista = isSuper ? CARTAS.slice() : CARTAS.filter(c=>c.gestor===STATE.role.user);
+  let lista = isSuper ? CARTAS.slice() : CARTAS.filter(c=>(c.gestor||'').trim()===(STATE.role.user||'').trim());
   if(HF.desde) lista=lista.filter(c=>c.fecha>=HF.desde);
   if(HF.hasta) lista=lista.filter(c=>c.fecha<=HF.hasta);
   if(isSuper&&HF.gestor!=='todos') lista=lista.filter(c=>c.gestor===HF.gestor);
+  const aprobadasDisp=(isSuper?CARTAS:CARTAS.filter(c=>(c.gestor||'').trim()===(STATE.role.user||'').trim())).filter(c=>c.estado==='aprobada').length;
   document.getElementById('view').innerHTML=`
   <div class="toolbar">
     <div class="field"><label>Desde</label><input type="date" class="input" style="min-width:150px" value="${HF.desde}" onchange="HF.desde=this.value;viewHist()"></div>
     <div class="field"><label>Hasta</label><input type="date" class="input" style="min-width:150px" value="${HF.hasta}" onchange="HF.hasta=this.value;viewHist()"></div>
     ${isSuper?`<div class="field"><label>Gestor</label><select class="select" onchange="HF.gestor=this.value;viewHist()"><option value="todos">Todos</option>${GESTORES.map(g=>`<option ${HF.gestor===g.nombre?'selected':''}>${g.nombre.split(' ').slice(0,3).join(' ')}</option>`).join('')}</select></div>`:''}
+    ${(HF.desde||HF.hasta)?`<div class="field"><label>&nbsp;</label><button class="btn ghost" onclick="HF={desde:'',hasta:'',gestor:HF.gestor};viewHist()">Quitar filtro de fecha</button></div>`:''}
     <div style="flex:1"></div>
-    <div class="field"><label>&nbsp;</label><button class="btn primary" onclick="descargarZip(${lista.filter(c=>c.entrega!=='emitida').length})">${svg(ICO.down)} Descargar lote (ZIP)</button></div>
+    <div class="field"><label>&nbsp;</label><button class="btn primary" ${aprobadasDisp?'':'disabled'} onclick="descargarZip()">${svg(ICO.down)} Descargar lote (ZIP) ${aprobadasDisp?`· ${aprobadasDisp}`:''}</button></div>
     <div class="field"><label>&nbsp;</label><button class="btn ghost" onclick="toast('ok','Exportado a Excel')">${svg(ICO.down)} Excel</button></div>
   </div>
   <div class="tbl-wrap glass"><table>
     <thead><tr><th>N° de carta</th><th>Tipo</th><th>Representante</th><th>Fecha</th>${isSuper?'<th>Gestor</th>':''}<th>Estado de entrega</th><th></th></tr></thead>
-    <tbody>${lista.length?lista.map(c=>{const rep=REPS.find(r=>r.cod===c.cod),p=PAISES[rep.pais],e=ENT[c.entrega];
+    <tbody>${lista.length?lista.map(c=>{
+      const rep=REPS.find(r=>r.cod===c.cod)||(c.snapshot&&c.snapshot.rep)||{nombre:'(cuenta no encontrada en la base actual)',pais:c.pais||'GT',cod:c.cod};
+      const e=ENT[c.entrega]||ENT.emitida;
       return `<tr>
       <td><span style="font-family:'JetBrains Mono';font-size:12px;color:var(--txt-2)">${c.num}</span></td>
       <td style="font-weight:500">${tipoLabel(rep,c.tipo)}</td>
       <td>${rep.nombre.split(' ').slice(0,3).join(' ')} <span class="fc" style="font-family:'JetBrains Mono';font-size:10px;padding:1px 5px;border-radius:4px;background:rgba(255,255,255,.06);margin-left:4px">${rep.pais}</span></td>
       <td><span style="font-family:'JetBrains Mono';font-size:12px;color:var(--txt-3)">${fmtFecha(c.fecha)}</span></td>
-      ${isSuper?`<td><span style="font-size:12px;color:var(--txt-2)">${c.gestor.split(' ')[0]} ${c.gestor.split(' ')[2]?c.gestor.split(' ')[2][0]+'.':''}</span></td>`:''}
-      <td><span class="st ${e.st}"><i></i>${e.lab}</span>${c.canal?`<span class="mtag" style="margin-left:7px">${CANALES[c.canal]}</span>`:''}</td>
+      ${isSuper?`<td><span style="font-size:12px;color:var(--txt-2)">${(c.gestor||'—').split(' ')[0]} ${(c.gestor||'').split(' ')[2]?(c.gestor||'').split(' ')[2][0]+'.':''}</span></td>`:''}
+      <td><span class="st ${e.st}"><i></i>${e.lab}</span> <span class="mtag" style="margin-left:6px">${c.estado==='aprobada'?'Aprobada':(c.estado==='pendiente'?'Por autorizar':(c.estado||''))}</span>${c.canal?`<span class="mtag" style="margin-left:7px">${CANALES[c.canal]}</span>`:''}</td>
       <td style="text-align:right">${accionEntrega(c,isSuper)}</td>
-    </tr>`;}).join(''):`<tr><td colspan="${isSuper?7:6}" style="text-align:center;padding:36px;color:var(--txt-3)">No hay cartas en este rango</td></tr>`}</tbody>
+    </tr>`;}).join(''):`<tr><td colspan="${isSuper?7:6}" style="text-align:center;padding:36px;color:var(--txt-3)">No hay cartas en este rango${(HF.desde||HF.hasta)?' · prueba quitando el filtro de fecha':''}</td></tr>`}</tbody>
   </table></div>`;
 }
 function accionEntrega(c,isSuper){
@@ -1394,8 +1413,11 @@ async function renderCartaAPdf(rep,tipo,num){
   const {jsPDF}=window.jspdf;
   const pdf=new jsPDF({unit:'pt',format:'letter'});
   const pw=pdf.internal.pageSize.getWidth(), ph=pdf.internal.pageSize.getHeight();
-  const imgW=pw, imgH=canvas.height*(imgW/canvas.width);
-  pdf.addImage(canvas.toDataURL('image/jpeg',0.95),'JPEG',0,0,imgW,Math.min(imgH,ph));
+  let imgW=pw, imgH=canvas.height*(imgW/canvas.width);
+  let offsetX=0, offsetY=0;
+  if(imgH>ph){ const f=ph/imgH; imgW=imgW*f; imgH=ph; offsetX=(pw-imgW)/2; }
+  else { offsetY=(ph-imgH)/2*0.35; } // pequeño respiro superior si la carta queda corta
+  pdf.addImage(canvas.toDataURL('image/jpeg',0.95),'JPEG',offsetX,offsetY,imgW,imgH);
   return pdf;
 }
 async function descargarPDFUnico(cod,tipo,num){
@@ -1408,11 +1430,10 @@ async function descargarPDFUnico(cod,tipo,num){
     toast('ok','PDF descargado · '+numC);
   }catch(e){toast('info','No se pudo generar el PDF: '+(e&&e.message?e.message:'error'));}
 }
-async function descargarZip(n){
-  if(!n){toast('info','No hay cartas listas para descargar');return;}
+async function descargarZip(){
   const isSuper=STATE.role.id==='super';
-  let lista=(isSuper?CARTAS:CARTAS.filter(c=>c.gestor===STATE.role.user)).filter(c=>c.entrega!=='emitida').slice(0,n);
-  if(!lista.length) lista=CARTAS.slice(0,n);
+  let lista=(isSuper?CARTAS:CARTAS.filter(c=>c.gestor===STATE.role.user)).filter(c=>c.estado==='aprobada');
+  if(!lista.length){toast('info','No hay cartas aprobadas para descargar');return;}
   document.getElementById('modal').innerHTML=`<div class="gen-prog">
     <div class="gen-ring"><svg width="90" height="90"><circle cx="45" cy="45" r="38" stroke="rgba(255,255,255,.1)" stroke-width="6" fill="none"/>
       <circle id="zring" cx="45" cy="45" r="38" stroke="url(#gz)" stroke-width="6" fill="none" stroke-linecap="round" stroke-dasharray="239" stroke-dashoffset="239"/>
@@ -1421,12 +1442,15 @@ async function descargarZip(n){
     <h3>Empaquetando ${lista.length} cartas</h3><p id="zmsg">Generando PDFs…</p></div>`;
   document.getElementById('overlay').classList.add('show');
   const zip=new JSZip();
+  let generadas=0;
   for(let i=0;i<lista.length;i++){
-    const c=lista[i], rep=REPS.find(r=>r.cod===c.cod);
+    const c=lista[i];
+    const rep=REPS.find(r=>r.cod===c.cod)||(c.snapshot&&c.snapshot.rep);
     if(rep){
       try{
         const pdf=await renderCartaAPdf(rep,c.tipo,c.num);
         zip.file(`${c.num}_${c.tipo}_${rep.cod}.pdf`,pdf.output('arraybuffer'));
+        generadas++;
       }catch(e){}
     }
     const pct=Math.round(((i+1)/lista.length)*100);
@@ -1434,10 +1458,11 @@ async function descargarZip(n){
     if(pc)pc.textContent=pct+'%'; if(ms)ms.textContent=`PDF ${i+1} de ${lista.length} · agregado al ZIP`;
     if(rg)rg.style.strokeDashoffset=239-(239*pct/100);
   }
+  if(!generadas){closeModal();toast('info','No se pudo generar ningún PDF · faltan datos de la cuenta');return;}
   const blob=await zip.generateAsync({type:'blob'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
   a.download=`cartera_lote_${new Date().toISOString().slice(0,10)}.zip`; a.click();
-  closeModal(); toast('ok',`ZIP descargado · ${lista.length} cartas en un solo archivo`);
+  closeModal(); toast('ok',`ZIP descargado · ${generadas} de ${lista.length} cartas`);
 }
 
 
@@ -1622,16 +1647,20 @@ function viewPerfil(){
         <button class="btn primary" style="width:100%;justify-content:center" onclick="go('hist')">${svg(ICO.hist)} Registrar entregas y respuestas</button></div>
     </div>`;
   } else {
+    const misAutorizadas=CARTAS.filter(c=>c.autorizo===STATE.role.user||c.autorizo===yo).length;
+    const enViaje=CARTAS.filter(c=>c.entrega==='enviada_gerente'||c.entrega==='entregada').length;
+    const porFirmar=CARTAS.filter(c=>c.estado==='pendiente').length;
+    const equipoActivo=USUARIOS.filter(u=>u.rol==='gestor'&&u.activo!==false).length||GESTORES.length;
     document.getElementById('view').innerHTML=head+`
     <div class="kpis">
-      ${kpi('Autorizadas por mí','58','rango de firma',ICO.auth,'var(--teal)')}
-      ${kpi('En viaje','96','enviadas, sin confirmar',ICO.send,'var(--sky)')}
-      ${kpi('Esperan mi firma','4','en autorización',ICO.sign,'var(--warn)')}
-      ${kpi('Equipo','19','gestores activos',ICO.user,'var(--ok)')}
+      ${kpi('Autorizadas por mí',misAutorizadas,'rango de firma',ICO.auth,'var(--teal)')}
+      ${kpi('En viaje',enViaje,'enviadas, sin confirmar',ICO.send,'var(--sky)')}
+      ${kpi('Esperan mi firma',porFirmar,'en autorización',ICO.sign,'var(--warn)')}
+      ${kpi('Equipo',equipoActivo,'gestores activos',ICO.user,'var(--ok)')}
     </div>`+transitoPanel()+`
     <div class="panel glass" style="margin-top:14px"><div class="panel-h"><h3>Accesos rápidos</h3></div>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
-        <button class="btn ghost" onclick="go('auth')">${svg(ICO.auth)} Autorizar (4)</button>
+        <button class="btn ghost" onclick="go('auth')">${svg(ICO.auth)} Autorizar (${porFirmar})</button>
         <button class="btn ghost" onclick="go('firma')">${svg(ICO.sign)} Mi firma</button>
         <button class="btn ghost" onclick="go('users')">${svg(ICO.user)} Personas y delegación</button>
         <button class="btn ghost" onclick="go('hist')">${svg(ICO.hist)} Historial</button>
@@ -1904,7 +1933,7 @@ async function dbCargarCartas(){
     if(error) return false;
     CARTAS.length=0;
     (data||[]).forEach(c=>{
-      CARTAS.push({num:c.num_correlativo,cod:c.rep_codigo,tipo:c.tipo,gestor:(c.snapshot&&c.snapshot.gestor)||'—',
+      CARTAS.push({num:c.num_correlativo,cod:c.rep_codigo,pais:c.pais,tipo:c.tipo,gestor:(c.snapshot&&c.snapshot.gestor)||'—',
         fecha:String(c.fecha_emision||c.creada_en||'').slice(0,10),autorizo:(c.snapshot&&c.snapshot.autorizo)||'—',
         entrega:c.entrega_estado||'emitida',canal:c.canal,evid:!!c.evidencia_path,estado:c.estado,
         dbId:c.id,snapshot:c.snapshot});
