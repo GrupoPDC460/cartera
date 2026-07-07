@@ -1380,13 +1380,15 @@ function viewHist(){
   if(isSuper&&HF.gestor!=='todos') lista=lista.filter(c=>c.gestor===HF.gestor);
   const aprobadasDisp=(isSuper?CARTAS:CARTAS.filter(c=>(c.gestor||'').trim()===(STATE.role.user||'').trim())).filter(c=>c.estado==='aprobada').length;
   document.getElementById('view').innerHTML=`
+  ${!isSuper?`<div style="margin-bottom:14px;padding:13px 16px;border-radius:12px;background:rgba(56,189,248,.06);border:1px solid rgba(56,189,248,.16);font-size:12.5px;color:var(--txt-2);line-height:1.6;display:flex;gap:10px;align-items:flex-start">
+    ${svg(ICO.bolt,15)}<div><b>¿Cómo funciona?</b> 1) Generas la carta → queda <b>Por autorizar</b>. 2) Un supervisor la <b>firma</b>. 3) Ya firmada, puedes <b>descargar el PDF</b> y <b>enviarla a la gerente</b>. 4) Cuando llegue a la representante, <b>registras la entrega con evidencia</b>.</div></div>`:''}
   <div class="toolbar">
     <div class="field"><label>Desde</label><input type="date" class="input" style="min-width:150px" value="${HF.desde}" onchange="HF.desde=this.value;viewHist()"></div>
     <div class="field"><label>Hasta</label><input type="date" class="input" style="min-width:150px" value="${HF.hasta}" onchange="HF.hasta=this.value;viewHist()"></div>
     ${isSuper?`<div class="field"><label>Gestor</label><select class="select" onchange="HF.gestor=this.value;viewHist()"><option value="todos">Todos</option>${GESTORES.map(g=>`<option ${HF.gestor===g.nombre?'selected':''}>${g.nombre.split(' ').slice(0,3).join(' ')}</option>`).join('')}</select></div>`:''}
     ${(HF.desde||HF.hasta)?`<div class="field"><label>&nbsp;</label><button class="btn ghost" onclick="HF={desde:'',hasta:'',gestor:HF.gestor};viewHist()">Quitar filtro de fecha</button></div>`:''}
     <div style="flex:1"></div>
-    <div class="field"><label>&nbsp;</label><button class="btn primary" ${aprobadasDisp?'':'disabled'} onclick="descargarZip()">${svg(ICO.down)} Descargar lote (ZIP) ${aprobadasDisp?`· ${aprobadasDisp}`:''}</button></div>
+    <div class="field"><label>&nbsp;</label><button class="btn primary" ${aprobadasDisp?'':'disabled'} onclick="descargarZip()">${svg(ICO.down)} Descargar aprobadas (ZIP)${aprobadasDisp?` · ${aprobadasDisp}`:''}</button></div>
     <div class="field"><label>&nbsp;</label><button class="btn ghost" onclick="toast('ok','Exportado a Excel')">${svg(ICO.down)} Excel</button></div>
   </div>
   <div class="tbl-wrap glass"><table>
@@ -1406,14 +1408,21 @@ function viewHist(){
   </table></div>`;
 }
 function accionEntrega(c,isSuper){
+  const rep=REPS.find(r=>r.cod===c.cod)||(c.snapshot&&c.snapshot.rep);
   const ver=`<button class="btn ghost sm" style="padding:6px 11px" onclick="showLetter('${c.cod}','${c.tipo}','${c.num}')">Ver</button>`;
+  const pdf=(c.estado==='aprobada'&&rep)?`<button class="btn ghost sm" style="padding:6px 11px;color:var(--teal)" onclick="descargarPDFUnico('${c.cod}','${c.tipo}','${c.num}')">${svg(ICO.down,13)} PDF</button>`:'';
   const evid=c.evid?`<button class="btn ghost sm" style="padding:6px 11px;color:var(--ok)" onclick="toast('info','Evidencia: ${CANALES[c.canal]} · entregada a la representante')">Evidencia</button>`:'';
-  if(isSuper) return `<div style="display:flex;gap:6px;justify-content:flex-end">${evid}${ver}</div>`;
+  if(isSuper) return `<div style="display:flex;gap:6px;justify-content:flex-end">${evid}${pdf}${ver}</div>`;
+  // gestor: no puede avanzar la carta hasta que un supervisor la apruebe/firme
   let acc='';
-  if(c.entrega==='emitida') acc=`<button class="btn ghost sm" style="padding:6px 11px;color:var(--warn)" onclick="avanzaEntrega('${c.num}','enviada_gerente')">${svg(ICO.send,13)} Enviar a gerente</button>`;
+  if(c.estado==='pendiente'){
+    acc=`<span style="font-size:11.5px;color:var(--warn);display:inline-flex;align-items:center;gap:5px">${svg(ICO.auth,13)} Esperando firma del supervisor</span>`;
+  } else if(c.estado==='rechazada'){
+    acc=`<span style="font-size:11.5px;color:var(--bad)">Rechazada por supervisión</span>`;
+  } else if(c.entrega==='emitida') acc=`<button class="btn ghost sm" style="padding:6px 11px;color:var(--warn)" onclick="avanzaEntrega('${c.num}','enviada_gerente')">${svg(ICO.send,13)} Enviar a gerente</button>`;
   else if(c.entrega==='enviada_gerente') acc=`<button class="btn primary sm" style="padding:6px 11px" onclick="modalEntrega('${c.num}')">${svg(ICO.upload,13)} Registrar entrega</button>`;
   else if(c.entrega==='entregada') acc=`<button class="btn sm ok" style="padding:6px 11px;flex:0" onclick="avanzaEntrega('${c.num}','respondida')">${svg(ICO.check,13)} Con respuesta</button>`;
-  return `<div style="display:flex;gap:6px;justify-content:flex-end">${evid}${acc}${ver}</div>`;
+  return `<div style="display:flex;gap:6px;justify-content:flex-end;align-items:center">${evid}${pdf}${acc}${ver}</div>`;
 }
 async function avanzaEntrega(num,nuevo){
   const c=CARTAS.find(x=>x.num===num); c.entrega=nuevo;
@@ -1467,6 +1476,15 @@ async function confirmEntrega(){
   viewHist();
 }
 /* ============ GENERACIÓN REAL DE PDF ============ */
+function nombreArchivoCarta(rep,tipo,num){
+  const limpio=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Za-z0-9 ]/g,'').trim().replace(/\s+/g,'_');
+  const nombre=limpio(rep.nombre).slice(0,40);
+  const pais=(PAISES[rep.pais]&&PAISES[rep.pais].nombre)?limpio(PAISES[rep.pais].nombre):rep.pais;
+  const hoy=new Date();
+  const fecha=`${String(hoy.getDate()).padStart(2,'0')}-${String(hoy.getMonth()+1).padStart(2,'0')}-${hoy.getFullYear()}`;
+  const tdoc={cobro:'Cobro',finiquito:'Finiquito',aldia:'Cuenta_al_Dia',saldo:'Saldo_Pendiente'}[tipo]||tipo;
+  return `${rep.cod}_${nombre}_${pais}_${fecha}_${tdoc}.pdf`;
+}
 async function renderCartaAPdf(rep,tipo,num){
   const html=letterHTML(rep,tipo,num);
   const host=document.createElement('div');
@@ -1495,14 +1513,23 @@ async function descargarPDFUnico(cod,tipo,num){
   try{
     const pdf=await renderCartaAPdf(rep,tipo,num);
     const numC=correlativo(rep,num);
-    pdf.save(`${numC}_${tipo}_${rep.cod}.pdf`);
+    pdf.save(nombreArchivoCarta(rep,tipo,num));
     toast('ok','PDF descargado · '+numC);
   }catch(e){toast('info','No se pudo generar el PDF: '+(e&&e.message?e.message:'error'));}
 }
 async function descargarZip(){
   const isSuper=STATE.role.id==='super';
-  let lista=(isSuper?CARTAS:CARTAS.filter(c=>c.gestor===STATE.role.user)).filter(c=>c.estado==='aprobada');
-  if(!lista.length){toast('info','No hay cartas aprobadas para descargar');return;}
+  const mias=isSuper?CARTAS:CARTAS.filter(c=>(c.gestor||'').trim()===(STATE.role.user||'').trim());
+  let lista=mias.filter(c=>c.estado==='aprobada');
+  if(!lista.length){
+    const pendientes=mias.filter(c=>c.estado==='pendiente').length;
+    if(pendientes){
+      toast('info',`Tienes ${pendientes} carta(s) que aún no ha autorizado un supervisor. Solo se descargan las ya firmadas.`);
+    }else{
+      toast('info','Aún no tienes cartas aprobadas para descargar.');
+    }
+    return;
+  }
   document.getElementById('modal').innerHTML=`<div class="gen-prog">
     <div class="gen-ring"><svg width="90" height="90"><circle cx="45" cy="45" r="38" stroke="rgba(255,255,255,.1)" stroke-width="6" fill="none"/>
       <circle id="zring" cx="45" cy="45" r="38" stroke="url(#gz)" stroke-width="6" fill="none" stroke-linecap="round" stroke-dasharray="239" stroke-dashoffset="239"/>
@@ -1518,7 +1545,7 @@ async function descargarZip(){
     if(rep){
       try{
         const pdf=await renderCartaAPdf(rep,c.tipo,c.num);
-        zip.file(`${c.num}_${c.tipo}_${rep.cod}.pdf`,pdf.output('arraybuffer'));
+        zip.file(nombreArchivoCarta(rep,c.tipo,c.num),pdf.output('arraybuffer'));
         generadas++;
       }catch(e){}
     }
