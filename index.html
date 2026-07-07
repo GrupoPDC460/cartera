@@ -531,6 +531,11 @@ const money=(s,n)=>s+' '+n.toLocaleString('es-GT',{minimumFractionDigits:2,maxim
 /* ---------- validación ---------- */
 function validar(rep,tipoId){
   const t=TIPOS[tipoId], b=rep.balance;
+  if(rep.tipoSolicitado){
+    if(rep.tipoSolicitado==='no_soportado') return {ok:false,rsn:`Pidieron "${rep.tipoSolicitadoTexto}" · tipo aún no disponible en el sistema`};
+    if(rep.tipoSolicitado==='desconocido') return {ok:false,rsn:`Tipo solicitado "${rep.tipoSolicitadoTexto}" no reconocido · revisa la recopilación`};
+    if(rep.tipoSolicitado!==tipoId) return {ok:false,rsn:`Pidieron ${TIPOS[rep.tipoSolicitado].nombre}, no ${t.nombre}`};
+  }
   if(t.regla==='pos' && b<=0) return {ok:false,rsn:b===0?'Saldo cero':'Saldo negativo'};
   if(t.regla==='cero' && b>0)  return {ok:false,rsn:'Tiene saldo pendiente'};
   if(tipoId==='cobro'){
@@ -895,25 +900,66 @@ function descargarSQLTxt(sql,cb){
   a.download='consulta_cartas.sql';a.click(); if(cb)cb();
 }
 /* --- fusionar PD directo desde las recopilaciones del día --- */
-function fusionarDesdeCache(){
-  const pares=[]; 
-  (RECOP_CACHE||[]).forEach(r=>{(r.csv||'').split('\n').forEach(l=>{
-    if(/^codigo/i.test(l))return; const p=l.split(',').map(x=>x.trim());
-    if(p[0]&&p[1])pares.push(p);});});
-  if(!pares.length){toast('info','No hay recopilaciones hoy');return;}
-  let ok=0,sinMatch=0;
-  pares.forEach(([cod,paisTxt,pdTxt])=>{
+function aplicarFusionPares(pares){
+  let ok=0,sinMatch=0,tiposNoSoportados=0;
+  pares.forEach(([cod,paisTxt,pdTxt,tipoTxt])=>{
     const iso=PAIS_A_ISO[String(paisTxt).toUpperCase()]||(PAISES[String(paisTxt).toUpperCase()]?String(paisTxt).toUpperCase():null);
     const rep=REPS.find(x=>x.cod===cod&&x.pais===iso);
     if(!rep){sinMatch++;return;}
     const t=String(pdTxt||'').toUpperCase();
     if(t==='M'||t==='R'){rep.estatus=t;rep.inact=0;}
     else{const n=parseInt(t.replace(/[^\d]/g,''));if(!isNaN(n))rep.inact=n;}
-    rep.pdFaltante=false;ok++;
+    rep.pdFaltante=false;
+    const tipoNorm=normalizarTipoSolicitado(tipoTxt);
+    rep.tipoSolicitado=tipoNorm.id; rep.tipoSolicitadoTexto=tipoNorm.texto;
+    if(tipoNorm.id==='no_soportado') tiposNoSoportados++;
+    ok++;
   });
+  return {ok,sinMatch,tiposNoSoportados};
+}
+function fusionarDesdeCache(){
+  const pares=[];
+  (RECOP_CACHE||[]).forEach(r=>{(r.csv||'').split('\n').forEach(l=>{
+    if(/^codigo/i.test(l))return; const p=l.split(',').map(x=>x.trim());
+    if(p[0]&&p[1])pares.push(p);});});
+  if(!pares.length){toast('info','No hay recopilaciones hoy');return;}
+  const r=aplicarFusionPares(pares);
   document.getElementById('pdSummary').innerHTML=`<div style="margin-top:14px;padding:12px;border-radius:10px;background:rgba(52,211,153,.06);border:1px solid rgba(52,211,153,.18);font-size:12.5px;color:var(--txt-2)">
-    ${svg(ICO.check,14)} <b style="color:var(--ok)">${ok} cuentas con PD asignado</b>${sinMatch?` · ${sinMatch} sin coincidencia en la base`:''}</div>`;
-  toast('ok',`PD fusionado desde el consolidado · ${ok} cuentas`);
+    ${svg(ICO.check,14)} <b style="color:var(--ok)">${r.ok} cuentas con PD asignado</b>${r.sinMatch?` · ${r.sinMatch} sin coincidencia en la base`:''}${r.tiposNoSoportados?` · <span style="color:var(--warn)">${r.tiposNoSoportados} con un tipo de carta aún no soportado</span>`:''}</div>`;
+  toast('ok',`PD fusionado desde el consolidado · ${r.ok} cuentas`);
+}
+/* --- subir consolidado con PD (y Tipo) desde archivo --- */
+function fusionarPD(ev){
+  const file=ev.target.files[0]; if(!file)return;
+  const reader=new FileReader();
+  const process=(wbOrText,isCsv)=>{
+    let rows;
+    if(isCsv){
+      rows=wbOrText.split('\n').map(l=>l.split(',').map(c=>c.trim())).filter(r=>r.length>1&&r[0]!=='');
+    }else{
+      const ws=wbOrText.Sheets[wbOrText.SheetNames[0]];
+      rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:''}).filter(r=>r.some(c=>c!==''));
+    }
+    const headers=rows[0].map(h=>String(h).trim().toUpperCase());
+    const iC=headers.findIndex(h=>h.includes('CODIGO')||h.includes('CÓDIGO'));
+    const iP=headers.findIndex(h=>h.includes('PAIS')||h.includes('PAÍS'));
+    const iPD=headers.findIndex(h=>h==='PD');
+    const iT=headers.findIndex(h=>h==='TIPO');
+    const pares=rows.slice(1).map(r=>[String(r[iC]||'').trim(),String(r[iP]||'').trim(),String(r[iPD]||'').trim(),iT>=0?String(r[iT]||'').trim():'']);
+    const res=aplicarFusionPares(pares);
+    document.getElementById('pdSummary').innerHTML=`
+      <div style="margin-top:14px;padding:12px;border-radius:10px;background:rgba(52,211,153,.06);border:1px solid rgba(52,211,153,.18);font-size:12.5px;color:var(--txt-2)">
+        ${svg(ICO.check,14)} <b style="color:var(--ok)">${res.ok} cuentas actualizadas</b> con su PD real.
+        ${res.sinMatch?`<div style="margin-top:8px;color:var(--warn)">⚠ ${res.sinMatch} sin coincidencia en la base</div>`:''}
+        ${res.tiposNoSoportados?`<div style="margin-top:8px;color:var(--warn)">⚠ ${res.tiposNoSoportados} cuentas piden un tipo de carta que el sistema aún no tiene (CASC, Carta Crediticia, etc.)</div>`:''}
+      </div>`;
+    toast('ok',`PD fusionado · ${res.ok} cuentas listas para generar`);
+  };
+  if(file.name.toLowerCase().endsWith('.csv')){
+    reader.onload=()=>process(reader.result,true); reader.readAsText(file);
+  }else{
+    reader.onload=()=>process(XLSX.read(reader.result,{type:'array'}),false); reader.readAsArrayBuffer(file);
+  }
 }
 /* --- reset del sistema --- */
 async function resetSistema(){
@@ -925,14 +971,30 @@ async function resetSistema(){
   viewUpload();
 }
 function downloadConsolidado(n){
-  let csv='Codigo,Pais,PD\n';
-  REPS.forEach(r=>{csv+=`${r.cod},${PAISES[r.pais].nombre},${r.estatus==='M'||r.estatus==='R'?r.estatus:('PD'+r.inact)}\n`;});
+  let csv='Codigo,Pais,PD,Tipo\n';
+  REPS.forEach(r=>{csv+=`${r.cod},${PAISES[r.pais].nombre},${r.estatus==='M'||r.estatus==='R'?r.estatus:('PD'+r.inact)},${r.tipoSolicitadoTexto||''}\n`;});
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
   a.download='consolidado_recopilacion.csv';a.click();
   toast('ok',`Consolidado descargado · ${n} códigos · listo para el query`);
 }
 /* ============ CARGA REAL DE LA BASE DEL QUERY ============ */
 const PAIS_A_ISO={GUATEMALA:'GT','EL SALVADOR':'SV',HONDURAS:'HD',NICARAGUA:'NC',PANAMA:'PA','PANAMÁ':'PA','REPUBLICA DOMINICANA':'RD','REPÚBLICA DOMINICANA':'RD','DOMINICANA':'RD'};
+/* texto que escribe el gestor en la columna "Tipo" -> tipo interno del sistema */
+const TIPO_TEXTO_A_ID={
+  'COBRO':'cobro','CARTA DE COBRO':'cobro','CARTA COBRO':'cobro',
+  'FINIQUITO':'finiquito',
+  'ALDIA':'aldia','AL DIA':'aldia','AL DÍA':'aldia','CUENTA AL DIA':'aldia','CUENTA AL DÍA':'aldia','CONSTANCIA CUENTA AL DIA':'aldia',
+  'SALDO':'saldo','SALDO PENDIENTE':'saldo','CONSTANCIA SALDO':'saldo',
+};
+const TIPOS_NO_SOPORTADOS=['CASC','CARTA CREDITICIA','CREDITICIA','CONSTANCIA CR','CONSTANCIAS CR'];
+function normalizarTipoSolicitado(txt){
+  if(!txt) return {id:null,texto:null};
+  const t=String(txt).trim().toUpperCase();
+  if(!t) return {id:null,texto:null};
+  if(TIPO_TEXTO_A_ID[t]) return {id:TIPO_TEXTO_A_ID[t],texto:t};
+  if(TIPOS_NO_SOPORTADOS.includes(t)) return {id:'no_soportado',texto:t};
+  return {id:'desconocido',texto:t};
+}
 const HEADER_MAP={
   'CODIGO REP':'cod','CÓDIGO REP':'cod','CODIGO':'cod','CÓDIGO':'cod',
   'ESTATUS ACTUAL':'estatus','ESTATUS':'estatus',
@@ -1019,6 +1081,12 @@ async function cargarBaseReal(ev){
 
 
 /* ============ GENERAR CARTAS ============ */
+function solicitadoBadge(r){
+  if(!r.tipoSolicitado) return `<span style="font-size:11px;color:var(--txt-3)">Sin especificar</span>`;
+  if(r.tipoSolicitado==='no_soportado') return `<span class="pd-chip pd-7">${r.tipoSolicitadoTexto}</span>`;
+  if(r.tipoSolicitado==='desconocido') return `<span class="pd-chip pd-C">"${r.tipoSolicitadoTexto}" ?</span>`;
+  return `<span class="pd-chip pd-A">${TIPOS[r.tipoSolicitado].nombre}</span>`;
+}
 function viewGen(){
   const tipo=STATE.tipo;
   const rows=REPS.map(r=>{
@@ -1035,6 +1103,7 @@ function viewGen(){
       <td><div class="rep-nm">${r.nombre}</div><div class="rep-cod">${r.cod} · Zona ${r.zona}</div></td>
       <td><span class="money ${bClass}">${money(p.moneda,r.balance)}</span></td>
       <td><span class="pd-chip ${pdClass}">${r.estatus}·PD${r.inact||0}</span></td>
+      <td>${solicitadoBadge(r)}</td>
       <td>${tipo==='cobro'
         ? `<div class="suggest">${variante.nombre}<span class="auto">AUTO</span></div>`
         : `<div class="suggest">${TIPOS[tipo].nombre}</div>`}</td>
@@ -1066,7 +1135,7 @@ function viewGen(){
 
   <div class="tbl-wrap glass">
     <table>
-      <thead><tr><th style="width:42px"></th><th>País</th><th>Representante</th><th>Balance</th><th>Mora</th><th>Carta sugerida</th><th>Validación</th><th></th></tr></thead>
+      <thead><tr><th style="width:42px"></th><th>País</th><th>Representante</th><th>Balance</th><th>Mora</th><th>Solicitado</th><th>Carta sugerida</th><th>Validación</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
   </div>
@@ -1560,7 +1629,7 @@ function viewRecop(){
     <div class="panel glass">
       <div class="panel-h"><h3>Plantilla de recopilación</h3>
         ${STATE.recopSubida?`<span class="pill ok">${svg(ICO.check,12)} Enviada</span>`:`<span class="pill warn">${svg(ICO.bell,12)} Pendiente</span>`}</div>
-      <p style="font-size:13px;color:var(--txt-2);line-height:1.65;margin-bottom:18px">Descarga la plantilla y coloca <b>código</b>, <b>país</b> y el <b>PD</b> de cada representante (según su estatus: A → PD1–3, C → PD4–7, o M/R para recovery). Súbela en tu corte y entrará automáticamente al <b>consolidado</b> de Supervisión.</p>
+      <p style="font-size:13px;color:var(--txt-2);line-height:1.65;margin-bottom:18px">Descarga la plantilla y coloca <b>código</b>, <b>país</b>, el <b>PD</b> (A→PD1–3, C→PD4–7, o M/R para Reserva) y el <b>Tipo</b> de carta que corresponde (Cobro, Finiquito, Aldia, Saldo). El sistema bloqueará si alguien intenta generar un tipo distinto al solicitado. Súbela en tu corte y entrará automáticamente al <b>consolidado</b> de Supervisión.</p>
       <div style="display:flex;gap:10px">
         <button class="btn ghost" onclick="downloadPlantilla()">${svg(ICO.down)} Descargar plantilla</button>
         <label class="btn primary" style="cursor:pointer">
@@ -1582,7 +1651,7 @@ function viewRecop(){
   </div>`;
 }
 function downloadPlantilla(){
-  const csv='Codigo,Pais,PD\n,,\n,,\n';
+  const csv='Codigo,Pais,PD,Tipo\n,,,\n,,,\n';
   const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
   a.download='plantilla_recopilacion.csv';a.click();
@@ -1783,10 +1852,15 @@ function toast(type,msg){
 /* ============ PERSONAS (administración) ============ */
 let userFilter='todos';
 function viewUsers(){
+ try{
   const sup=USUARIOS.filter(u=>u.rol==='super');
   const ges=USUARIOS.filter(u=>u.rol==='gestor');
   const act=USUARIOS.filter(u=>u.activo).length;
   const list = userFilter==='super'?sup : userFilter==='gestor'?ges : USUARIOS;
+  if(!USUARIOS.length){
+    document.getElementById('view').innerHTML=`<div class="empty glass" style="padding:60px">${svg(ICO.bell,40)}<h3>No se pudo cargar el listado de personas</h3><p>Verifica la conexión a Supabase (indicador en la pantalla de acceso) o recarga la página.</p></div>`;
+    return;
+  }
   document.getElementById('view').innerHTML=`
   ${delegPanel()}
   <div class="toolbar">
@@ -1822,6 +1896,9 @@ function viewUsers(){
         </div></td>
       </tr>`;}).join('')}</tbody>
   </table></div>`;
+ }catch(e){
+   document.getElementById('view').innerHTML=`<div class="empty glass" style="padding:60px">${svg(ICO.bell,40)}<h3>Ocurrió un error al mostrar el listado</h3><p style="font-family:'JetBrains Mono';font-size:12px">${(e&&e.message)||e}</p></div>`;
+ }
 }
 function setUF(f){userFilter=f;viewUsers();}
 function toggleUser(i){USUARIOS[i].activo=!USUARIOS[i].activo;
