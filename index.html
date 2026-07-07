@@ -633,12 +633,14 @@ function buildNav(){
     {id:'plantillas',ic:ICO.doc,t:'Plantillas'},
     {id:'firma',ic:ICO.sign,t:'Mi firma'},
     {id:'users',ic:ICO.user,t:'Personas'},
+    {id:'ayuda',ic:ICO.bolt,t:'Instrucciones'},
   ] : [
     {id:'perfil',ic:ICO.dash,t:'Mi panel'},
     {id:'recop',ic:ICO.down,t:'Recopilación'},
     ...(STATE.delegado===STATE.role.user?[{id:'upload',ic:ICO.upload,t:'Cargar base',badge:'★'}]:[]),
     {id:'gen',ic:ICO.gen,t:'Generar cartas'},
     {id:'hist',ic:ICO.hist,t:'Mis cartas'},
+    {id:'ayuda',ic:ICO.bolt,t:'Instrucciones'},
   ];
   document.getElementById('nav').innerHTML=items.map((i,k)=>`
     <div class="nav-item ${i.id===STATE.view?'active':(!items.some(x=>x.id===STATE.view)&&k===0?'active':'')}" data-v="${i.id}" onclick="go('${i.id}')">
@@ -654,15 +656,75 @@ const TITLES={dash:['Panel','Resumen general de la operación'],
   firma:['Mi firma','Se aplica a todas las cartas que autorices'],
   recop:['Recopilación','Plantilla de carga y cortes del día'],
   perfil:['Mi perfil','Tu actividad y tus cartas'],
-  plantillas:['Plantillas de cartas','Edita el texto · los campos del Excel no cambian']};
+  plantillas:['Plantillas de cartas','Edita el texto · los campos del Excel no cambian'],
+  ayuda:['Instrucciones de uso','Cómo usar el sistema y cómo solicitar las cartas']};
 function go(v){
   STATE.view=v; STATE.sel.clear();
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.toggle('active',n.dataset.v===v));
   document.getElementById('vTitle').textContent=TITLES[v][0];
   document.getElementById('vCrumb').textContent=TITLES[v][1];
   const el=document.getElementById('view'); el.classList.remove('fade');void el.offsetWidth;el.classList.add('fade');
-  ({dash:viewDash,upload:viewUpload,gen:viewGen,auth:viewAuth,hist:viewHist,users:viewUsers,firma:viewFirma,recop:viewRecop,perfil:viewPerfil,plantillas:viewPlantillas}[v])();
+  ({dash:viewDash,upload:viewUpload,gen:viewGen,auth:viewAuth,hist:viewHist,users:viewUsers,firma:viewFirma,recop:viewRecop,perfil:viewPerfil,plantillas:viewPlantillas,ayuda:viewAyuda}[v])();
 }
+
+/* ============ INSTRUCCIONES DE USO ============ */
+function viewAyuda(){
+  const isG=STATE.role.id!=='super';
+  const card=(n,titulo,cuerpo)=>`<div class="panel glass" style="margin-bottom:12px">
+    <div style="display:flex;gap:14px;align-items:flex-start">
+      <div style="flex:0 0 34px;height:34px;border-radius:10px;background:var(--accent);display:grid;place-items:center;font-family:'Space Grotesk';font-weight:700;color:#fff">${n}</div>
+      <div style="flex:1"><h3 style="font-size:15px;margin-bottom:6px">${titulo}</h3>
+        <div style="font-size:13px;color:var(--txt-2);line-height:1.7">${cuerpo}</div></div>
+    </div></div>`;
+  const chip=t=>`<span class="mtag" style="margin:0 3px">${t}</span>`;
+
+  const pasosGestor=`
+    ${card(1,'Recopila tus cuentas','Ve a <b>Recopilación</b> y descarga la plantilla. Es un archivo con 4 columnas: <b>Codigo, Pais, PD, Tipo</b>. Borra las filas de ejemplo y escribe una fila por cada representante.')}
+    ${card(2,'Llena cada columna correctamente',`
+      <b>Codigo:</b> el código de la representante.<br>
+      <b>Pais:</b> escrito completo — ${chip('Guatemala')}${chip('El Salvador')}${chip('Honduras')}${chip('Nicaragua')}${chip('Panamá')}${chip('República Dominicana')}<br>
+      <b>PD:</b> el tramo de mora — ${chip('PD1')} a ${chip('PD7')} · o ${chip('M')}/${chip('R')} si está en Reserva (jurídico).<br>
+      <b>Tipo:</b> qué carta necesita — ${chip('Cobro')}${chip('Finiquito')}${chip('Aldia')}${chip('Saldo')}`)}
+    ${card(3,'Sube tu plantilla','Guarda el archivo y súbelo en <b>Recopilación → Subir</b>. El sistema te dirá cuántos registros reales recibió. Si el número no coincide, revisa que no tengas filas vacías.')}
+    ${card(4,'Genera tus cartas','En <b>Generar cartas</b>, elige el tipo arriba y marca las cuentas <b>Listas</b>. Si una cuenta está <b>Bloqueada</b>, el sistema te explica por qué (ej. pediste Finiquito pero estás generando Cobro).')}
+    ${card(5,'Espera la firma','Tus cartas quedan <b>Por autorizar</b>. Un supervisor las revisa y firma. Mientras tanto no puedes enviarlas — es normal.')}
+    ${card(6,'Descarga y entrega','Ya firmadas, en <b>Mis cartas</b> puedes descargar el <b>PDF</b> (una o el lote completo en ZIP). Entrégala a la Gerente de Zona, que la hace llegar a la representante.')}
+    ${card(7,'Registra la entrega','Cuando la carta llegó a la representante, marca <b>Registrar entrega</b> y <b>adjunta la evidencia</b> (foto/WhatsApp/correo). La evidencia es obligatoria.')}`;
+
+  const pasosSuper=`
+    ${card(1,'Consolida y carga la base','En <b>Cargar datos</b> revisa el consolidado de los gestores, copia la <b>consulta SQL</b>, ejecútala en SQL Server, y sube el resultado. Luego <b>fusiona el PD</b> del consolidado.')}
+    ${card(2,'Genera o revisa','Puedes generar cartas igual que un gestor. El sistema valida saldo, tramo, duplicados y el <b>tipo solicitado</b>.')}
+    ${card(3,'Autoriza y firma','En <b>Autorización</b> revisa las cartas pendientes y apruébalas. Tu <b>firma</b> (cárgala en Mi firma) se estampa automáticamente en cada carta aprobada.')}
+    ${card(4,'Administra','En <b>Personas</b> gestionas accesos y delegación. En <b>Plantillas</b> editas el texto de las cartas sin tocar los campos automáticos.')}`;
+
+  document.getElementById('view').innerHTML=`
+  <div class="panel glass" style="margin-bottom:14px;background:linear-gradient(135deg,rgba(45,212,191,.08),rgba(56,189,248,.05))">
+    <h3 style="font-size:16px;margin-bottom:6px">${svg(ICO.bolt,17)} ${isG?'Guía rápida para gestores':'Guía para supervisión'}</h3>
+    <p style="font-size:13px;color:var(--txt-2);line-height:1.6">${isG?'Sigue estos pasos en orden. Si algo se bloquea, el sistema siempre te dice el motivo — léelo con calma.':'Flujo completo de administración y autorización del sistema de cartas.'}</p>
+  </div>
+  ${isG?pasosGestor:pasosSuper}
+  <div class="panel glass" style="margin-top:6px">
+    <h3 style="font-size:14px;margin-bottom:10px">${svg(ICO.auth,15)} ¿Qué significa cada estado?</h3>
+    <div style="display:flex;flex-direction:column;gap:8px;font-size:12.5px;color:var(--txt-2)">
+      <div><span class="st pend"><i></i>Por autorizar</span> — generada, esperando la firma del supervisor.</div>
+      <div><span class="st sent"><i></i>Aprobada</span> — firmada y lista para descargar y entregar.</div>
+      <div><span class="st gen"><i></i>Emitida / Enviada a gerente</span> — en camino hacia la representante.</div>
+      <div><span class="st sent"><i></i>Entregada</span> — llegó a la representante (con evidencia).</div>
+    </div>
+  </div>
+  <div class="panel glass" style="margin-top:12px;border-color:rgba(251,191,36,.25)">
+    <h3 style="font-size:14px;margin-bottom:8px;color:var(--warn)">Tipos de carta disponibles</h3>
+    <div style="font-size:12.5px;color:var(--txt-2);line-height:1.8">
+      ${chip('Cobro')} recordatorio/requerimiento según el PD (el sistema elige el tono).<br>
+      ${chip('Finiquito')} cuando el saldo quedó en 0 (deuda cancelada).<br>
+      ${chip('Aldia')} constancia de cuenta al día (vigencia 30 días).<br>
+      ${chip('Saldo')} constancia de saldo pendiente.<br>
+      <span style="color:var(--txt-3)">Tipos como CASC o Carta Crediticia aún no están disponibles — el sistema los bloquea y avisa.</span>
+    </div>
+  </div>`;
+}
+
+/* ============ INSTRUCCIONES DE USO (fin) ============ */
 
 /* ============ DASHBOARD ============ */
 function viewDash(){
@@ -1660,7 +1722,7 @@ function viewRecop(){
       <div style="display:flex;gap:10px">
         <button class="btn ghost" onclick="downloadPlantilla()">${svg(ICO.down)} Descargar plantilla</button>
         <label class="btn primary" style="cursor:pointer">
-          <input type="file" accept=".csv" style="display:none" onchange="subirRecop(event)">
+          <input type="file" accept=".csv,.xlsx,.xls,text/csv,application/vnd.ms-excel" style="display:none" onchange="subirRecop(event)">
           ${svg(ICO.upload)} Subir mi plantilla</label>
       </div>
       <div style="margin-top:18px;padding:14px;border-radius:12px;background:rgba(255,255,255,.03);border:1px solid var(--stroke);font-family:'JetBrains Mono';font-size:12px;color:var(--txt-2);line-height:1.7">
@@ -1678,21 +1740,43 @@ function viewRecop(){
   </div>`;
 }
 function downloadPlantilla(){
-  const csv='Codigo,Pais,PD,Tipo\n,,,\n,,,\n';
+  const csv='\ufeffCodigo,Pais,PD,Tipo\n1210802,Guatemala,PD2,Cobro\n2098771,El Salvador,PD5,Finiquito\n';
   const a=document.createElement('a');
-  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
   a.download='plantilla_recopilacion.csv';a.click();
-  toast('ok','Plantilla descargada');
+  toast('ok','Plantilla descargada · borra las filas de ejemplo y pon tus datos');
 }
 async function subirRecop(e){
   const file=e.target.files[0]; if(!file)return;
-  const txt=await file.text();
-  const lineas=txt.split('\n').map(l=>l.trim()).filter(l=>l&&!/^codigo/i.test(l));
-  const validas=lineas.filter(l=>{const p=l.split(',');return p[0]&&p[1];});
-  if(!validas.length){toast('info','La plantilla está vacía · llena Código, País y PD');return;}
+  let filas=[];
+  try{
+    if(/\.(xlsx|xls)$/i.test(file.name)){
+      const buf=await file.arrayBuffer();
+      const wb=XLSX.read(buf,{type:'array'});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      filas=XLSX.utils.sheet_to_json(ws,{header:1,raw:false,defval:''});
+    }else{
+      const txt=await file.text();
+      filas=txt.split(/\r?\n/).map(l=>l.split(','));
+    }
+  }catch(err){toast('info','No se pudo leer el archivo: '+(err.message||'formato'));return;}
+
+  // fila válida = tiene código Y país con contenido real (ignora encabezado y filas vacías)
+  const validas=filas.filter(cols=>{
+    const cod=String(cols[0]||'').replace(/^\ufeff/,'').trim();
+    const pais=String(cols[1]||'').trim();
+    if(!cod||!pais) return false;
+    if(/^codigo$/i.test(cod)) return false; // encabezado
+    return true;
+  }).map(cols=>cols.slice(0,4).map(c=>String(c||'').replace(/^\ufeff/,'').trim()).join(','));
+
+  if(!validas.length){
+    toast('info','El archivo no tiene registros · llena al menos Código y País en cada fila');
+    return;
+  }
   STATE.recopSubida=true;
-  const ok=await dbSubirRecopilacion(STATE.role.user,'Codigo,Pais,PD\n'+validas.join('\n'),validas.length);
-  toast('ok',`${validas.length} códigos enviados al consolidado${ok?' · guardado en Supabase':' (local)'}`);
+  const ok=await dbSubirRecopilacion(STATE.role.user,'Codigo,Pais,PD,Tipo\n'+validas.join('\n'),validas.length);
+  toast('ok',`${validas.length} ${validas.length===1?'registro enviado':'registros enviados'} al consolidado${ok?' · guardado en Supabase':' (local)'}`);
   viewRecop();
 }
 
