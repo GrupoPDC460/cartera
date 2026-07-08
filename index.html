@@ -393,6 +393,7 @@ tbody tr.blocked{opacity:.62}
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
 
+
 /* ============ Cartera · CRM de cartas (prototipo demo) ============ */
 
 const ICO = {
@@ -1215,6 +1216,44 @@ function viewGen(){
   const blocked=REPS.length-validos.length;
   const selN=STATE.sel.size;
 
+  // resumen de la carga: por tipo, por país, y motivos de bloqueo agrupados
+  const porTipoResumen={}, porPaisResumen={}, motivos={};
+  REPS.forEach(r=>{
+    const te=tipoDe(r);
+    const v=te?validar(r,te):{ok:false,rsn:'Sin tipo solicitado · márcalo en la recopilación'};
+    const iso=r.pais;
+    porPaisResumen[iso]=porPaisResumen[iso]||{ok:0,bloq:0};
+    if(v.ok){ porPaisResumen[iso].ok++; const lab=te==='cobro'?'Cobro':(TIPOS[te]?TIPOS[te].nombre:te); porTipoResumen[lab]=(porTipoResumen[lab]||0)+1; }
+    else { porPaisResumen[iso].bloq++; const m=v.rsn.split(' · ')[0]; motivos[m]=(motivos[m]||0)+1; }
+  });
+  const resumenCarga=`
+  <div class="panel glass" style="margin-bottom:14px">
+    <div class="panel-h"><div><h3>Resumen de esta carga</h3>
+      <div style="font-size:12px;color:var(--txt-3);margin-top:3px">${REPS.length} cuentas en la base · ${validos.length} listas · ${blocked} bloqueadas</div></div>
+      <div style="display:flex;gap:8px">
+        <span class="pill ok">${svg(ICO.check,12)} ${validos.length} listas</span>
+        ${blocked?`<span class="pill no">${svg(ICO.block,12)} ${blocked} bloqueadas</span>`:''}
+      </div></div>
+    <div class="grid-2" style="gap:14px">
+      <div>
+        <div style="font-size:12px;color:var(--txt-3);margin-bottom:8px;font-weight:600">CARTAS LISTAS POR TIPO</div>
+        ${Object.keys(porTipoResumen).length?Object.entries(porTipoResumen).map(([n,c])=>`<div class="type-row"><span class="tn">${n}</span><div class="tmeter"><i style="width:${(c/Math.max(...Object.values(porTipoResumen)))*100}%"></i></div><span class="tv">${c}</span></div>`).join(''):'<div style="font-size:12px;color:var(--txt-3);padding:10px 0">Ninguna carta lista aún</div>'}
+        <div style="font-size:12px;color:var(--txt-3);margin:14px 0 8px;font-weight:600">POR PAÍS</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          ${Object.entries(porPaisResumen).map(([iso,d])=>`<span class="mtag">${(PAISES[iso]||{}).nombre||iso}: <b style="color:var(--ok)">${d.ok}</b>${d.bloq?` · <span style="color:var(--bad)">${d.bloq}</span>`:''}</span>`).join('')}
+        </div>
+      </div>
+      <div>
+        <div style="font-size:12px;color:var(--txt-3);margin-bottom:8px;font-weight:600">MOTIVOS DE BLOQUEO</div>
+        ${Object.keys(motivos).length?Object.entries(motivos).sort((a,b)=>b[1]-a[1]).map(([m,c])=>`
+          <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--stroke)">
+            <span style="flex:0 0 26px;text-align:center;font-family:'Space Grotesk';font-weight:700;color:var(--bad)">${c}</span>
+            <span style="font-size:12.5px;color:var(--txt-2)">${m}</span></div>`).join('')
+        :'<div style="font-size:12.5px;color:var(--ok);padding:10px 0">✓ Ninguna cuenta bloqueada · todo listo para generar</div>'}
+      </div>
+    </div>
+  </div>`;
+
   document.getElementById('view').innerHTML=`
   <div class="toolbar">
     <div class="field"><label>Tipo de carta</label>
@@ -1231,7 +1270,10 @@ function viewGen(){
       <button class="btn ghost" onclick="selectAll()">${svg(ICO.check)} Seleccionar válidas</button></div>
   </div>
   ${auto?`<div style="margin-bottom:12px;padding:11px 15px;border-radius:11px;background:rgba(45,212,191,.06);border:1px solid rgba(45,212,191,.16);font-size:12.5px;color:var(--txt-2);line-height:1.5">
-    ${svg(ICO.bolt,14)} <b>Según lo solicitado:</b> cada cuenta se genera con el tipo que pidió el gestor. El <b>Finiquito prevalece sobre el PD</b> (solo exige saldo 0); las cartas de Cobro sí respetan el tramo de mora.</div>`:''}
+    ${svg(ICO.bolt,14)} <b>Según lo solicitado:</b> cada cuenta se genera con el tipo que pidió el gestor (Cobro, Finiquito, Saldo, Aldia). El <b>Finiquito prevalece sobre el PD</b> (solo exige saldo 0); el <b>Saldo pendiente</b> usa su propia plantilla y sí lleva saldo; las cartas de Cobro respetan el tramo de mora.</div>`
+    :`<div style="margin-bottom:12px;padding:11px 15px;border-radius:11px;background:rgba(251,191,36,.07);border:1px solid rgba(251,191,36,.2);font-size:12.5px;color:var(--txt-2);line-height:1.5">
+    ${svg(ICO.bell,14)} Estás en modo <b>${TIPOS[tipo].nombre}</b>: solo se generarán cuentas que pidieron ese tipo. Para procesar un lote mixto (cobro + finiquito + saldo), cambia arriba a <b onclick="setTipo('auto')" style="color:var(--teal);cursor:pointer;text-decoration:underline">Según lo solicitado</b>.</div>`}
+  ${resumenCarga}
 
   <div class="tbl-wrap glass">
     <table>
@@ -1870,12 +1912,22 @@ async function subirRecop(e){
 
 /* ============ PERFIL ============ */
 function metricasGestor(nombre){
-  const cs=CARTAS.filter(c=>c.gestor===nombre);
+  const cs=CARTAS.filter(c=>(c.gestor||'').trim()===(nombre||'').trim());
   return {emit:cs.length,
+    porFirmar:cs.filter(c=>c.estado==='pendiente').length,
+    aprobadas:cs.filter(c=>c.estado==='aprobada').length,
     gerente:cs.filter(c=>['enviada_gerente','entregada','respondida'].includes(c.entrega)).length,
     entreg:cs.filter(c=>['entregada','respondida'].includes(c.entrega)).length,
     resp:cs.filter(c=>c.entrega==='respondida').length,
     evid:cs.filter(c=>c.evid).length};
+}
+function miRecopHoy(nombre){
+  // cuántas cuentas cargó este gestor hoy en su recopilación
+  if(!RECOP_CACHE) return null;
+  const mia=RECOP_CACHE.find(r=>(r.nombre||'').trim()===(nombre||'').trim());
+  if(!mia) return {n:0,filas:[]};
+  const filas=(mia.csv||'').split('\n').filter(l=>l&&!/^codigo/i.test(l)).map(l=>l.split(','));
+  return {n:filas.length,filas,hora:mia.hora};
 }
 function viewPerfil(){
   const isG=STATE.role.id==='gestor', yo=STATE.role.user;
@@ -1891,28 +1943,33 @@ function viewPerfil(){
     <div class="val">${val}</div><div class="meta">${meta}</div></div>`;
   if(isG){
     const m=metricasGestor(yo);
+    const rec=miRecopHoy(yo);
     document.getElementById('view').innerHTML=cortesBanner()+head+`
     <div class="kpis">
       ${kpi('Cartas emitidas',m.emit,'en total',ICO.doc,'var(--teal)')}
-      ${kpi('Enviadas a gerente',m.gerente,'señal de envío',ICO.send,'var(--sky)')}
-      ${kpi('Entregadas a rep.',m.entreg,'con evidencia',ICO.check,'var(--ok)')}
-      ${kpi('Con respuesta',m.resp,'gestión cerrada',ICO.auth,'var(--warn)')}
+      ${kpi('Por firmar',m.porFirmar,'esperan al supervisor',ICO.auth,'var(--warn)')}
+      ${kpi('Aprobadas',m.aprobadas,'listas para enviar',ICO.check,'var(--sky)')}
+      ${kpi('Entregadas',m.entreg,'con evidencia',ICO.send,'var(--ok)')}
     </div>
     <div class="grid-2">
-      <div class="panel glass"><div class="panel-h"><h3>Estado de mis cartas</h3><span class="hint">Cadena hacia la representante</span></div>
-        ${[['Emitidas',m.emit,'var(--txt-2)'],['Enviadas a la gerente',m.gerente,'var(--sky)'],['Entregadas a la representante',m.entreg,'var(--ok)'],['Con respuesta',m.resp,'var(--warn)']]
+      <div class="panel glass"><div class="panel-h"><h3>Etapa de mis cartas</h3><span class="hint">Recorrido completo</span></div>
+        ${[['1 · Emitidas',m.emit,'var(--txt-2)'],['2 · Por firmar (supervisor)',m.porFirmar,'var(--warn)'],['3 · Aprobadas / firmadas',m.aprobadas,'var(--sky)'],['4 · Enviadas a la gerente',m.gerente,'#818cf8'],['5 · Entregadas a la representante',m.entreg,'var(--ok)'],['6 · Con respuesta',m.resp,'var(--teal)']]
           .map(([n,v,c])=>`<div class="type-row"><span class="tn">${n}</span><div class="tmeter"><i style="width:${m.emit?(v/m.emit)*100:0}%;background:${c}"></i></div><span class="tv">${v}</span></div>`).join('')}
+        <button class="btn primary" style="width:100%;justify-content:center;margin-top:14px" onclick="go('hist')">${svg(ICO.hist)} Ver y gestionar mis cartas</button>
       </div>
-      <div class="panel glass"><div class="panel-h"><h3>Evidencia y respuesta</h3></div>
-        <div style="display:flex;gap:12px;margin-bottom:16px">
-          <div style="flex:1;padding:16px;border-radius:14px;background:rgba(52,211,153,.06);border:1px solid rgba(52,211,153,.18)">
-            <div style="font-family:'Space Grotesk';font-weight:700;font-size:26px;color:var(--ok)">${m.evid}</div>
-            <div style="font-size:12px;color:var(--txt-2);margin-top:3px">con evidencia adjunta</div></div>
-          <div style="flex:1;padding:16px;border-radius:14px;background:rgba(251,191,36,.06);border:1px solid rgba(251,191,36,.18)">
-            <div style="font-family:'Space Grotesk';font-weight:700;font-size:26px;color:var(--warn)">${m.entreg-m.resp}</div>
-            <div style="font-size:12px;color:var(--txt-2);margin-top:3px">esperan respuesta</div></div>
-        </div>
-        <button class="btn primary" style="width:100%;justify-content:center" onclick="go('hist')">${svg(ICO.hist)} Registrar entregas y respuestas</button></div>
+      <div class="panel glass"><div class="panel-h"><div><h3>Mi recopilación de hoy</h3>
+        <div style="font-size:12px;color:var(--txt-3);margin-top:2px">${rec?(rec.n?`${rec.n} cuentas cargadas${rec.hora?' · '+rec.hora:''}`:'aún no has subido tu recopilación'):'sin conexión'}</div></div>
+        <button class="btn ghost sm" onclick="go('recop')">${svg(ICO.down,13)} Ir a Recopilación</button></div>
+        ${rec&&rec.n?`<div class="tbl-wrap" style="max-height:260px;overflow-y:auto"><table>
+          <thead><tr><th>Código</th><th>País</th><th>PD</th><th>Tipo</th></tr></thead>
+          <tbody>${rec.filas.slice(0,50).map(f=>`<tr>
+            <td><span style="font-family:'JetBrains Mono';font-size:12px">${(f[0]||'').trim()}</span></td>
+            <td style="font-size:12.5px">${(f[1]||'').trim()}</td>
+            <td><span class="mtag">${(f[2]||'—').trim()}</span></td>
+            <td><span class="mtag">${(f[3]||'—').trim()}</span></td></tr>`).join('')}</tbody>
+        </table>${rec.filas.length>50?`<div style="text-align:center;padding:8px;font-size:12px;color:var(--txt-3)">… y ${rec.filas.length-50} más</div>`:''}</div>`
+        :`<div style="text-align:center;padding:34px;color:var(--txt-3);font-size:13px">${svg(ICO.upload,32)}<div style="margin-top:10px">Descarga la plantilla, llénala y súbela en <b>Recopilación</b>.<br>Aquí verás las cuentas que cargaste.</div></div>`}
+      </div>
     </div>`;
   } else {
     const misAutorizadas=CARTAS.filter(c=>c.autorizo===STATE.role.user||c.autorizo===yo).length;
@@ -2322,11 +2379,12 @@ async function dbCargarFirmas(){
 /* init */
 renderLogin();
 initSupabase().then(async()=>{
-  if(SB_OK){ await dbCargarRepresentantes(); await dbCargarCartas(); dbCargarFirmas(); }
+  if(SB_OK){ await dbCargarRepresentantes(); await dbCargarCartas(); dbCargarFirmas(); RECOP_CACHE=await dbCargarRecopilaciones(); }
   const lg=document.getElementById('login');
   if(lg&&!lg.classList.contains('hidden'))renderLogin();
 });
 document.getElementById('overlay').addEventListener('click',e=>{if(e.target.id==='overlay')closeModal();});
+
 
 
 </script>
