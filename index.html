@@ -1718,7 +1718,7 @@ function viewRecop(){
     <div class="panel glass">
       <div class="panel-h"><h3>Plantilla de recopilación</h3>
         ${STATE.recopSubida?`<span class="pill ok">${svg(ICO.check,12)} Enviada</span>`:`<span class="pill warn">${svg(ICO.bell,12)} Pendiente</span>`}</div>
-      <p style="font-size:13px;color:var(--txt-2);line-height:1.65;margin-bottom:18px">Descarga la plantilla y coloca <b>código</b>, <b>país</b>, el <b>PD</b> (A→PD1–3, C→PD4–7, o M/R para Reserva) y el <b>Tipo</b> de carta que corresponde (Cobro, Finiquito, Aldia, Saldo). El sistema bloqueará si alguien intenta generar un tipo distinto al solicitado. Súbela en tu corte y entrará automáticamente al <b>consolidado</b> de Supervisión.</p>
+      <p style="font-size:13px;color:var(--txt-2);line-height:1.65;margin-bottom:18px">Descarga la plantilla (Excel con dos hojas: <b>Datos</b> para llenar e <b>Instrucciones</b> como guía). En la hoja <b>Datos</b> escribe <b>código</b>, <b>país</b>, el <b>PD</b> (A→PD1–3, C→PD4–7, o M/R para Reserva) y el <b>Tipo</b> (Cobro, Finiquito, Aldia, Saldo). El sistema solo lee la hoja Datos y bloquea si intentan generar un tipo distinto al solicitado. Súbela en tu corte y entrará al <b>consolidado</b> de Supervisión.</p>
       <div style="display:flex;gap:10px">
         <button class="btn ghost" onclick="downloadPlantilla()">${svg(ICO.down)} Descargar plantilla</button>
         <label class="btn primary" style="cursor:pointer">
@@ -1739,12 +1739,43 @@ function viewRecop(){
     </div>
   </div>`;
 }
+const CODIGOS_EJEMPLO=['1210802','2098771']; // para detectar si no borraron los ejemplos
 function downloadPlantilla(){
-  const csv='\ufeffCodigo,Pais,PD,Tipo\n1210802,Guatemala,PD2,Cobro\n2098771,El Salvador,PD5,Finiquito\n';
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
-  a.download='plantilla_recopilacion.csv';a.click();
-  toast('ok','Plantilla descargada · borra las filas de ejemplo y pon tus datos');
+  // Genera un .xlsx con 2 hojas: "Datos" (vacía, para llenar) e "Instrucciones" (referencia)
+  const wb=XLSX.utils.book_new();
+  // Hoja 1: Datos — solo encabezados, sin filas de ejemplo
+  const datos=[['Codigo','Pais','PD','Tipo']];
+  const wsDatos=XLSX.utils.aoa_to_sheet(datos);
+  wsDatos['!cols']=[{wch:14},{wch:20},{wch:8},{wch:14}];
+  XLSX.utils.book_append_sheet(wb,wsDatos,'Datos');
+  // Hoja 2: Instrucciones
+  const inst=[
+    ['INSTRUCCIONES PARA LLENAR LA PLANTILLA'],
+    [''],
+    ['Llena UNA fila por cada representante en la hoja "Datos". No modifiques los encabezados.'],
+    [''],
+    ['Columna','Qué escribir','Ejemplos válidos'],
+    ['Codigo','El código de la representante','1210802'],
+    ['Pais','El país escrito completo','Guatemala / El Salvador / Honduras / Nicaragua / Panamá / República Dominicana'],
+    ['PD','El tramo de mora, o M/R si está en Reserva','PD1, PD2, PD3, PD4, PD5, PD6, PD7, M, R'],
+    ['Tipo','Qué carta necesita esa cuenta','Cobro / Finiquito / Aldia / Saldo'],
+    [''],
+    ['EJEMPLO (así se vería una fila llena):'],
+    ['Codigo','Pais','PD','Tipo'],
+    ['1210802','Guatemala','PD2','Cobro'],
+    ['2098771','El Salvador','PD5','Finiquito'],
+    [''],
+    ['IMPORTANTE:'],
+    ['- Estos ejemplos son SOLO de referencia. NO los copies como datos reales.'],
+    ['- El sistema solo lee la hoja "Datos". Esta hoja de instrucciones no se sube.'],
+    ['- Verifica que el número de registros que reporta el sistema coincida con tus cuentas.'],
+    ['- Tipos como CASC o Carta Crediticia aún no están disponibles.'],
+  ];
+  const wsInst=XLSX.utils.aoa_to_sheet(inst);
+  wsInst['!cols']=[{wch:22},{wch:42},{wch:60}];
+  XLSX.utils.book_append_sheet(wb,wsInst,'Instrucciones');
+  XLSX.writeFile(wb,'plantilla_recopilacion.xlsx');
+  toast('ok','Plantilla descargada · llena la hoja "Datos" · revisa la hoja "Instrucciones"');
 }
 async function subirRecop(e){
   const file=e.target.files[0]; if(!file)return;
@@ -1753,7 +1784,10 @@ async function subirRecop(e){
     if(/\.(xlsx|xls)$/i.test(file.name)){
       const buf=await file.arrayBuffer();
       const wb=XLSX.read(buf,{type:'array'});
-      const ws=wb.Sheets[wb.SheetNames[0]];
+      // usa la hoja "Datos" si existe; si no, la primera (nunca la de Instrucciones)
+      let hoja=wb.SheetNames.find(n=>/datos/i.test(n));
+      if(!hoja) hoja=wb.SheetNames.find(n=>!/instruc/i.test(n))||wb.SheetNames[0];
+      const ws=wb.Sheets[hoja];
       filas=XLSX.utils.sheet_to_json(ws,{header:1,raw:false,defval:''});
     }else{
       const txt=await file.text();
@@ -1771,8 +1805,19 @@ async function subirRecop(e){
   }).map(cols=>cols.slice(0,4).map(c=>String(c||'').replace(/^\ufeff/,'').trim()).join(','));
 
   if(!validas.length){
-    toast('info','El archivo no tiene registros · llena al menos Código y País en cada fila');
+    toast('info','El archivo no tiene registros · llena al menos Código y País en la hoja "Datos"');
     return;
+  }
+  // detectar si dejaron los códigos de ejemplo
+  const codigos=validas.map(v=>v.split(',')[0]);
+  const soloEjemplos=codigos.every(c=>CODIGOS_EJEMPLO.includes(c));
+  const tieneEjemplos=codigos.some(c=>CODIGOS_EJEMPLO.includes(c));
+  if(soloEjemplos){
+    toast('info','Parece que subiste solo las filas de EJEMPLO. Ponlas por tus cuentas reales antes de subir.');
+    return;
+  }
+  if(tieneEjemplos){
+    toast('info','Ojo: tu archivo incluye códigos de ejemplo (1210802 / 2098771). Revísalo si no son cuentas reales.');
   }
   STATE.recopSubida=true;
   const ok=await dbSubirRecopilacion(STATE.role.user,'Codigo,Pais,PD,Tipo\n'+validas.join('\n'),validas.length);
