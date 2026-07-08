@@ -1183,6 +1183,7 @@ function solicitadoBadge(r){
   return `<span class="pd-chip pd-A">${TIPOS[r.tipoSolicitado].nombre}</span>`;
 }
 function viewGen(){
+  if(STATE.role.id==='gestor') STATE.tipo='auto'; // el gestor siempre genera según lo solicitado
   const tipo=STATE.tipo;
   const auto=tipo==='auto'; // "Según lo solicitado": cada cuenta usa su tipoSolicitado
   const tipoDe=r=>auto?(r.tipoSolicitado&&TIPOS[r.tipoSolicitado]?r.tipoSolicitado:null):tipo;
@@ -1256,15 +1257,15 @@ function viewGen(){
 
   document.getElementById('view').innerHTML=`
   <div class="toolbar">
-    <div class="field"><label>Tipo de carta</label>
+    ${STATE.role.id==='super'?`<div class="field"><label>Tipo de carta</label>
       <select class="select" onchange="setTipo(this.value)">
         <option value="auto" ${auto?'selected':''}>Según lo solicitado (recomendado)</option>
         ${Object.entries(TIPOS).map(([id,t])=>`<option value="${id}" ${id===tipo?'selected':''}>${t.nombre}</option>`).join('')}
-      </select></div>
+      </select></div>`:''}
     <div class="field"><label>País</label>
       <select class="select"><option>Todos los países</option>${Object.entries(PAISES).map(([k,p])=>`<option>${p.nombre}</option>`).join('')}</select></div>
-    <div class="field"><label>Firma al aprobar</label>
-      <select class="select"><option>Daniel Monge</option><option>Oliver Santos</option><option>Henry Velásquez</option></select></div>
+    ${STATE.role.id==='super'?`<div class="field"><label>Firma al aprobar</label>
+      <select class="select"><option>Daniel Monge</option><option>Oliver Santos</option><option>Henry Velásquez</option></select></div>`:''}
     <div style="flex:1"></div>
     <div class="field"><label>&nbsp;</label>
       <button class="btn ghost" onclick="selectAll()">${svg(ICO.check)} Seleccionar válidas</button></div>
@@ -1518,40 +1519,62 @@ function tipoLabel(rep,tipo){
   return TIPOS[tipo].nombre;
 }
 function fmtFecha(f){if(!f)return '—';const[y,m,d]=String(f).split('-');return `${d}/${m}/${y}`;}
-let HF={desde:'',hasta:'',gestor:'todos'};
+let HF={desde:'',hasta:'',gestor:'todos',estado:'todos'};
 function viewHist(){
   const isSuper=STATE.role.id==='super';
   let lista = isSuper ? CARTAS.slice() : CARTAS.filter(c=>(c.gestor||'').trim()===(STATE.role.user||'').trim());
   if(HF.desde) lista=lista.filter(c=>c.fecha>=HF.desde);
   if(HF.hasta) lista=lista.filter(c=>c.fecha<=HF.hasta);
   if(isSuper&&HF.gestor!=='todos') lista=lista.filter(c=>c.gestor===HF.gestor);
-  const aprobadasDisp=(isSuper?CARTAS:CARTAS.filter(c=>(c.gestor||'').trim()===(STATE.role.user||'').trim())).filter(c=>c.estado==='aprobada').length;
+  if(HF.estado==='aprobada') lista=lista.filter(c=>c.estado==='aprobada');
+  else if(HF.estado==='pendiente') lista=lista.filter(c=>c.estado!=='aprobada');
+  // AUTORIZADAS PRIMERO, luego el resto (sin importar el tipo de carta)
+  const rank=c=>c.estado==='aprobada'?0:(c.estado==='pendiente'?1:2);
+  lista.sort((a,b)=>rank(a)-rank(b)||String(b.fecha||'').localeCompare(String(a.fecha||'')));
+  const misTodas=isSuper?CARTAS:CARTAS.filter(c=>(c.gestor||'').trim()===(STATE.role.user||'').trim());
+  const aprobadasDisp=misTodas.filter(c=>c.estado==='aprobada').length;
+  const pendientesDisp=misTodas.filter(c=>c.estado!=='aprobada').length;
+  // índice donde empiezan las NO autorizadas (para el separador visual)
+  const corte=lista.findIndex(c=>c.estado!=='aprobada');
   document.getElementById('view').innerHTML=`
   ${!isSuper?`<div style="margin-bottom:14px;padding:13px 16px;border-radius:12px;background:rgba(56,189,248,.06);border:1px solid rgba(56,189,248,.16);font-size:12.5px;color:var(--txt-2);line-height:1.6;display:flex;gap:10px;align-items:flex-start">
     ${svg(ICO.bolt,15)}<div><b>¿Cómo funciona?</b> 1) Generas la carta → queda <b>Por autorizar</b>. 2) Un supervisor la <b>firma</b>. 3) Ya firmada, puedes <b>descargar el PDF</b> y <b>enviarla a la gerente</b>. 4) Cuando llegue a la representante, <b>registras la entrega con evidencia</b>.</div></div>`:''}
   <div class="toolbar">
+    <div class="field"><label>Estado</label>
+      <select class="select" style="min-width:190px" onchange="HF.estado=this.value;viewHist()">
+        <option value="todos" ${HF.estado==='todos'?'selected':''}>Todas (autorizadas primero)</option>
+        <option value="aprobada" ${HF.estado==='aprobada'?'selected':''}>Solo autorizadas (${aprobadasDisp})</option>
+        <option value="pendiente" ${HF.estado==='pendiente'?'selected':''}>Solo por autorizar (${pendientesDisp})</option>
+      </select></div>
     <div class="field"><label>Desde</label><input type="date" class="input" style="min-width:150px" value="${HF.desde}" onchange="HF.desde=this.value;viewHist()"></div>
     <div class="field"><label>Hasta</label><input type="date" class="input" style="min-width:150px" value="${HF.hasta}" onchange="HF.hasta=this.value;viewHist()"></div>
     ${isSuper?`<div class="field"><label>Gestor</label><select class="select" onchange="HF.gestor=this.value;viewHist()"><option value="todos">Todos</option>${GESTORES.map(g=>`<option ${HF.gestor===g.nombre?'selected':''}>${g.nombre.split(' ').slice(0,3).join(' ')}</option>`).join('')}</select></div>`:''}
-    ${(HF.desde||HF.hasta)?`<div class="field"><label>&nbsp;</label><button class="btn ghost" onclick="HF={desde:'',hasta:'',gestor:HF.gestor};viewHist()">Quitar filtro de fecha</button></div>`:''}
+    ${(HF.desde||HF.hasta)?`<div class="field"><label>&nbsp;</label><button class="btn ghost" onclick="HF.desde='';HF.hasta='';viewHist()">Quitar filtro de fecha</button></div>`:''}
     <div style="flex:1"></div>
     <div class="field"><label>&nbsp;</label><button class="btn primary" ${aprobadasDisp?'':'disabled'} onclick="descargarZip()">${svg(ICO.down)} Descargar aprobadas (ZIP)${aprobadasDisp?` · ${aprobadasDisp}`:''}</button></div>
     <div class="field"><label>&nbsp;</label><button class="btn ghost" onclick="toast('ok','Exportado a Excel')">${svg(ICO.down)} Excel</button></div>
   </div>
   <div class="tbl-wrap glass"><table>
     <thead><tr><th>N° de carta</th><th>Tipo</th><th>Representante</th><th>Fecha</th>${isSuper?'<th>Gestor</th>':''}<th>Estado de entrega</th><th></th></tr></thead>
-    <tbody>${lista.length?lista.map(c=>{
+    <tbody>${lista.length?lista.map((c,idx)=>{
       const rep=REPS.find(r=>r.cod===c.cod)||(c.snapshot&&c.snapshot.rep)||{nombre:'(cuenta no encontrada en la base actual)',pais:c.pais||'GT',cod:c.cod};
       const e=ENT[c.entrega]||ENT.emitida;
-      return `<tr>
+      const cols=isSuper?7:6;
+      // encabezado de sección: autorizadas arriba, no autorizadas abajo
+      let sep='';
+      if(HF.estado==='todos'){
+        if(idx===0&&c.estado==='aprobada') sep=`<tr><td colspan="${cols}" style="padding:10px 14px;background:rgba(52,211,153,.05);border-left:3px solid var(--ok)"><span style="font-size:11.5px;font-weight:700;letter-spacing:.4px;color:var(--ok)">${svg(ICO.check,12)} AUTORIZADAS · listas para descargar y entregar (${aprobadasDisp})</span></td></tr>`;
+        if(idx===corte&&corte>=0) sep=`<tr><td colspan="${cols}" style="padding:10px 14px;background:rgba(251,191,36,.05);border-left:3px solid var(--warn)"><span style="font-size:11.5px;font-weight:700;letter-spacing:.4px;color:var(--warn)">${svg(ICO.auth,12)} AÚN NO AUTORIZADAS · esperan la firma del supervisor (${pendientesDisp})</span></td></tr>`;
+      }
+      return sep+`<tr>
       <td><span style="font-family:'JetBrains Mono';font-size:12px;color:var(--txt-2)">${c.num}</span></td>
       <td style="font-weight:500">${tipoLabel(rep,c.tipo)}</td>
       <td>${rep.nombre.split(' ').slice(0,3).join(' ')} <span class="fc" style="font-family:'JetBrains Mono';font-size:10px;padding:1px 5px;border-radius:4px;background:rgba(255,255,255,.06);margin-left:4px">${rep.pais}</span></td>
       <td><span style="font-family:'JetBrains Mono';font-size:12px;color:var(--txt-3)">${fmtFecha(c.fecha)}</span></td>
       ${isSuper?`<td><span style="font-size:12px;color:var(--txt-2)">${(c.gestor||'—').split(' ')[0]} ${(c.gestor||'').split(' ')[2]?(c.gestor||'').split(' ')[2][0]+'.':''}</span></td>`:''}
-      <td><span class="st ${e.st}"><i></i>${e.lab}</span> <span class="mtag" style="margin-left:6px">${c.estado==='aprobada'?'Aprobada':(c.estado==='pendiente'?'Por autorizar':(c.estado||''))}</span>${c.canal?`<span class="mtag" style="margin-left:7px">${CANALES[c.canal]}</span>`:''}</td>
+      <td><span class="st ${e.st}"><i></i>${e.lab}</span> <span class="mtag" style="margin-left:6px;${c.estado==='aprobada'?'color:var(--ok);border-color:rgba(52,211,153,.3)':'color:var(--warn)'}">${c.estado==='aprobada'?'Aprobada':(c.estado==='pendiente'?'Por autorizar':(c.estado||''))}</span>${c.canal?`<span class="mtag" style="margin-left:7px">${CANALES[c.canal]}</span>`:''}</td>
       <td style="text-align:right">${accionEntrega(c,isSuper)}</td>
-    </tr>`;}).join(''):`<tr><td colspan="${isSuper?7:6}" style="text-align:center;padding:36px;color:var(--txt-3)">No hay cartas en este rango${(HF.desde||HF.hasta)?' · prueba quitando el filtro de fecha':''}</td></tr>`}</tbody>
+    </tr>`;}).join(''):`<tr><td colspan="${isSuper?7:6}" style="text-align:center;padding:36px;color:var(--txt-3)">No hay cartas en este rango${(HF.desde||HF.hasta)?' · prueba quitando el filtro de fecha':''}${HF.estado!=='todos'?' · prueba cambiando el filtro de estado':''}</td></tr>`}</tbody>
   </table></div>`;
 }
 function accionEntrega(c,isSuper){
