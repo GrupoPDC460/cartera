@@ -914,15 +914,7 @@ function viewUpload(){
 }
 /* --- generador de consulta SQL con el formato oficial --- */
 function consolidadoPares(){
-  const pares=[]; const vistos=new Set();
-  (RECOP_CACHE||[]).forEach(r=>{
-    (r.csv||'').split('\n').forEach(l=>{
-      if(/^codigo/i.test(l))return;
-      const p=l.split(',').map(x=>x.trim());
-      if(p[0]&&p[1]&&!vistos.has(p[0]+'|'+p[1])){vistos.add(p[0]+'|'+p[1]);pares.push([p[0],p[1]]);}
-    });
-  });
-  return pares;
+  return filasConsolidado().map(f=>[f[0],f[1]]);
 }
 function copiarSQL(){
   const pares=consolidadoPares();
@@ -965,7 +957,7 @@ function descargarSQLTxt(sql,cb){
 function aplicarFusionPares(pares){
   let ok=0,sinMatch=0,tiposNoSoportados=0;
   pares.forEach(([cod,paisTxt,pdTxt,tipoTxt])=>{
-    const iso=PAIS_A_ISO[String(paisTxt).toUpperCase()]||(PAISES[String(paisTxt).toUpperCase()]?String(paisTxt).toUpperCase():null);
+    const iso=paisAIso(paisTxt);
     const rep=REPS.find(x=>x.cod===cod&&x.pais===iso);
     if(!rep){sinMatch++;return;}
     const t=String(pdTxt||'').toUpperCase();
@@ -1032,15 +1024,50 @@ async function resetSistema(){
   toast(ok?'ok':'info', ok?'Sistema reiniciado · listo para empezar de 0':'Reinicio local (sin conexión)');
   viewUpload();
 }
+function filasConsolidado(){
+  // arma el consolidado desde las recopilaciones reales de los gestores (Codigo,Pais,PD,Tipo)
+  const filas=[]; const vistos=new Set();
+  (RECOP_CACHE||[]).forEach(r=>{
+    (r.csv||'').split('\n').forEach(l=>{
+      if(/^codigo/i.test(l))return;
+      const p=l.split(',').map(x=>x.trim());
+      if(p[0]&&p[1]){
+        const key=p[0]+'|'+p[1];
+        if(!vistos.has(key)){vistos.add(key);filas.push([p[0],p[1],p[2]||'',p[3]||'']);}
+      }
+    });
+  });
+  return filas;
+}
 function downloadConsolidado(n){
-  let csv='Codigo,Pais,PD,Tipo\n';
-  REPS.forEach(r=>{csv+=`${r.cod},${PAISES[r.pais].nombre},${r.estatus==='M'||r.estatus==='R'?r.estatus:('PD'+r.inact)},${r.tipoSolicitadoTexto||''}\n`;});
-  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  const filas=filasConsolidado();
+  if(!filas.length){toast('info','No hay recopilaciones en el consolidado de hoy');return;}
+  // BOM (\ufeff) para que Excel respete las tildes (Panamá, República, etc.)
+  let csv='\ufeffCodigo,Pais,PD,Tipo\r\n';
+  filas.forEach(f=>{csv+=f.map(c=>{
+    const s=String(c==null?'':c);
+    return /[",\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; // escapa comas/comillas
+  }).join(',')+'\r\n';});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
   a.download='consolidado_recopilacion.csv';a.click();
-  toast('ok',`Consolidado descargado · ${n} códigos · listo para el query`);
+  toast('ok',`Consolidado descargado · ${filas.length} registros · listo para el query`);
 }
 /* ============ CARGA REAL DE LA BASE DEL QUERY ============ */
-const PAIS_A_ISO={GUATEMALA:'GT','EL SALVADOR':'SV',HONDURAS:'HD',NICARAGUA:'NC',PANAMA:'PA','PANAMÁ':'PA','REPUBLICA DOMINICANA':'RD','REPÚBLICA DOMINICANA':'RD','DOMINICANA':'RD'};
+const PAIS_A_ISO={GUATEMALA:'GT','EL SALVADOR':'SV',HONDURAS:'HD',NICARAGUA:'NC',PANAMA:'PA','PANAMÁ':'PA','REPUBLICA DOMINICANA':'RD','REPÚBLICA DOMINICANA':'RD','DOMINICANA':'RD','RD':'RD'};
+/* convierte cualquier texto de país (con o sin tildes, corrupto, abreviado) al código ISO */
+function paisAIso(txt){
+  if(!txt) return null;
+  let t=String(txt).trim().toUpperCase();
+  if(PAISES[t]) return t; // ya es un ISO válido (GT, SV…)
+  // quita tildes y cualquier carácter no alfabético (arregla "PANAMÁ¡", "PANAMÃ", etc.)
+  const limpio=t.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Z ]/g,'').trim();
+  if(PAIS_A_ISO[limpio]) return PAIS_A_ISO[limpio];
+  // coincidencia por prefijo (PANAMA, PANAM, GUATEMAL…)
+  const claves={GUATEMALA:'GT',SALVADOR:'SV',HONDURAS:'HD',NICARAGUA:'NC',PANAMA:'PA',DOMINICANA:'RD'};
+  for(const k in claves){ if(limpio.includes(k)||k.includes(limpio)&&limpio.length>=4) return claves[k]; }
+  return null;
+}
 /* texto que escribe el gestor en la columna "Tipo" -> tipo interno del sistema */
 const TIPO_TEXTO_A_ID={
   'COBRO':'cobro','CARTA DE COBRO':'cobro','CARTA COBRO':'cobro',
@@ -1074,8 +1101,7 @@ function parseFilaBase(row,headers){
   const o={};
   headers.forEach((h,i)=>{const key=HEADER_MAP[normHeader(h)]; if(key) o[key]=row[i];});
   if(!o.cod||!o.pais) return null;
-  const isoDirecto=String(o.pais).trim().toUpperCase();
-  const iso=PAIS_A_ISO[isoDirecto]||(PAISES[isoDirecto]?isoDirecto:null)||PAIS_A_ISO[isoDirecto.normalize?isoDirecto.normalize('NFD').replace(/[\u0300-\u036f]/g,''):isoDirecto];
+  const iso=paisAIso(o.pais);
   const balance=parseFloat(String(o.balance).replace(/,/g,''))||0;
   const estatus=o.estatus?String(o.estatus).trim().toUpperCase():'A';
   // El PD NO se calcula de N. INACTIVIDADES — lo coloca el gestor (columna PD) según su estatus (A→1-3, C→4-7, M/R→recovery)
