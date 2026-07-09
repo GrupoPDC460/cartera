@@ -2651,7 +2651,9 @@ async function dbCargarRepresentantes(){
 async function dbGuardarRepresentantes(parsed){
   if(!SB_OK||!sb) return {ok:false,msg:'sin conexión'};
   try{
-    await sb.from('cartera_representantes').delete().gte('id',0);
+    // reemplaza la base anterior · .not(id,is,null) funciona con uuid y con serial
+    const {error:eDel}=await sb.from('cartera_representantes').delete().not('id','is',null);
+    if(eDel) return {ok:false,msg:'no se pudo limpiar la base anterior: '+eDel.message};
     const filas=parsed.map(p=>({codigo:p.cod,pais:p.pais,zona:p.zona,nombre:p.nombre,estatus:p.estatus,
       pd:p.inact,inactividades:p.inactividadesInfo,balance:p.balance,cedula:p.cedula,campania:p.camp}));
     for(let i=0;i<filas.length;i+=200){
@@ -2806,30 +2808,40 @@ async function dbCargarRecopilaciones(){
   }catch(e){return null;}
 }
 async function dbReset(){
-  const errores=[];
-  if(!SB_OK||!sb) return {ok:false,errores:['sin conexión a Supabase']};
-  const borrarTabla=async(t,filtro)=>{
+  const errores=[]; const detalle={};
+  if(!SB_OK||!sb) return {ok:false,errores:['sin conexión a Supabase'],detalle};
+  // OJO: .gte('id',0) NO funciona si el id es UUID (Postgres rechaza la comparación).
+  // .not('id','is',null) borra todas las filas sea el id uuid, serial o bigint.
+  const borrarTabla=async(t)=>{
     try{
-      const q=sb.from(t).delete();
-      const {error}= filtro==='pais' ? await q.neq('pais','__') : await q.gte('id',0);
-      if(error) errores.push(t+': '+error.message);
-    }catch(e){ errores.push(t+': '+e.message); }
+      const {error}=await sb.from(t).delete().not('id','is',null);
+      if(error){ errores.push(t+': '+error.message); detalle[t]='ERROR'; }
+      else{
+        const {count}=await sb.from(t).select('*',{count:'exact',head:true});
+        detalle[t]=(count===0)?'vacía':('quedan '+count);
+        if(count>0) errores.push(t+': quedaron '+count+' filas');
+      }
+    }catch(e){ errores.push(t+': '+e.message); detalle[t]='ERROR'; }
   };
-  await borrarTabla('cartera_cartas');
-  await borrarTabla('cartera_representantes');
-  await borrarTabla('cartera_recopilacion');
-  await borrarTabla('cartera_correlativos','pais');
-  await borrarTabla('cartera_auditoria');
-  await borrarTabla('cartera_delegaciones');
+  for(const t of ['cartera_cartas','cartera_representantes','cartera_recopilacion',
+                  'cartera_auditoria','cartera_delegaciones']) await borrarTabla(t);
+  // correlativos: la PK es el país, no un id
+  try{
+    const {error}=await sb.from('cartera_correlativos').delete().neq('pais','__zzz__');
+    if(error) errores.push('cartera_correlativos: '+error.message);
+    else detalle['cartera_correlativos']='reiniciados';
+  }catch(e){ errores.push('cartera_correlativos: '+e.message); }
   // vaciar el bucket de evidencias (las firmas NO se tocan)
   try{
     const {data:files}=await sb.storage.from('cartera_evidencias').list('',{limit:1000});
     if(files&&files.length){
       const {error}=await sb.storage.from('cartera_evidencias').remove(files.map(f=>f.name));
       if(error) errores.push('evidencias: '+error.message);
-    }
+      else detalle['evidencias']=files.length+' borradas';
+    } else detalle['evidencias']='vacío';
   }catch(e){ errores.push('evidencias: '+e.message); }
-  return {ok:errores.length===0, errores};
+  console.info('[Cartera] Resultado del reinicio:', detalle);
+  return {ok:errores.length===0, errores, detalle};
 }
 async function resetSistema(){
   const paso1=confirm(
@@ -2855,13 +2867,20 @@ async function resetSistema(){
   STATE.sel.clear(); STATE.recopSubida=false;
   buildNav();
 
-  if(res.ok){
-    toast('ok','Sistema reiniciado · listo para empezar de cero');
-  } else {
-    toast('info','Reinicio parcial · revisa la consola (F12)');
-    console.warn('[Cartera] No se pudo borrar:', res.errores);
-  }
-  go('upload');
+  const filas=Object.entries(res.detalle||{}).map(([t,v])=>
+    `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--stroke);font-size:12.5px">
+      <span style="color:var(--txt-2)">${t.replace('cartera_','')}</span>
+      <b style="color:${/vacía|reiniciados|borradas|vacío/.test(v)?'var(--ok)':'var(--bad)'}">${v}</b></div>`).join('');
+  document.getElementById('modal').innerHTML=`<div class="panel glass" style="max-width:430px">
+    <h3 style="margin-bottom:4px">${res.ok?'Sistema reiniciado':'Reinicio incompleto'}</h3>
+    <p style="font-size:12.5px;color:var(--txt-3);margin-bottom:14px">${res.ok
+      ? 'Todo quedó limpio. Puedes empezar las pruebas de cero.'
+      : 'Algo no se pudo borrar. Revisa el detalle:'}</p>
+    ${filas}
+    ${res.errores.length?`<div style="margin-top:12px;padding:10px;border-radius:9px;background:rgba(251,113,133,.08);border:1px solid rgba(251,113,133,.2);font-size:11.5px;color:var(--bad);font-family:'JetBrains Mono';line-height:1.6">${res.errores.join('<br>')}</div>`:''}
+    <button class="btn primary" style="width:100%;justify-content:center;margin-top:16px" onclick="closeModal();go('upload')">Entendido</button>
+  </div>`;
+  document.getElementById('overlay').classList.add('show');
 }
 
 
