@@ -1109,10 +1109,61 @@ function gestorPanel(){
 
 /* ============ CARGAR DATOS · CONSOLIDACIÓN ============ */
 let RECOP_CACHE=null;
+/* ===== Dueño de cada cuenta = el gestor que la puso en SU recopilación =====
+   Una carta pertenece al gestor dueño de la cuenta, aunque la haya generado
+   el supervisor por lote. Sin esto, los gestores no ven sus propias cartas. */
+let DUENO_CUENTA={}; // 'codigo|ISO' -> nombre del gestor
+function claveCuenta(cod,pais){ return String(cod).trim()+'|'+String(pais).trim().toUpperCase(); }
+function construirDuenos(){
+  DUENO_CUENTA={};
+  (RECOP_CACHE||[]).forEach(r=>{
+    (r.csv||'').split('\n').forEach(l=>{
+      if(!l||/^codigo/i.test(l)) return;
+      const p=l.split(',').map(x=>x.trim());
+      if(!p[0]||!p[1]) return;
+      const iso=paisAIso(p[1]);
+      if(iso) DUENO_CUENTA[claveCuenta(p[0],iso)]=r.nombre;
+    });
+  });
+  return Object.keys(DUENO_CUENTA).length;
+}
+/* a quién pertenece la carta de esta cuenta */
+function gestorDeCuenta(rep){
+  const d=DUENO_CUENTA[claveCuenta(rep.cod,rep.pais)];
+  if(d) return d;
+  // sin recopilación conocida: la firma quien la genera
+  return STATE.role.user;
+}
+/* Corrige cartas ya guardadas que quedaron a nombre de quien las generó
+   (por ejemplo, un lote emitido por Supervisión) y las devuelve a su gestor.
+   Se refleja en memoria y se persiste en el snapshot de Supabase. */
+async function reasignarDuenosCartas(){
+  if(!Object.keys(DUENO_CUENTA).length) return 0;
+  let corregidas=0;
+  for(const c of CARTAS){
+    const pais=c.pais||(c.snapshot&&c.snapshot.rep&&c.snapshot.rep.pais);
+    if(!pais) continue;
+    const duenio=DUENO_CUENTA[claveCuenta(c.cod,pais)];
+    if(duenio && (c.gestor||'').trim()!==duenio.trim()){
+      if(!c.emitidaPor) c.emitidaPor=c.gestor; // conservar quién la emitió
+      c.gestor=duenio;
+      corregidas++;
+      if(SB_OK&&sb){
+        try{
+          const snap=Object.assign({},c.snapshot||{},{gestor:duenio,emitidaPor:c.emitidaPor});
+          await sb.from('cartera_cartas').update({snapshot:snap}).eq('num_correlativo',c.num);
+          c.snapshot=snap;
+        }catch(e){}
+      }
+    }
+  }
+  if(corregidas) console.info('[Cartera] '+corregidas+' cartas reasignadas a su gestor.');
+  return corregidas;
+}
 function viewUpload(){
   document.getElementById('view').innerHTML='<div class="empty glass" style="padding:50px"><h3>Cargando recopilaciones…</h3></div>';
   dbCargarRecopilaciones().then(reales=>{
-    RECOP_CACHE=reales;
+    RECOP_CACHE=reales; construirDuenos();
     const subieron=reales||[];
     const nombresSubieron=subieron.map(r=>r.nombre);
     const recop=GESTORES.map(g=>{
@@ -1710,12 +1761,14 @@ async function generarLote(){
   for(let i=0;i<seleccion.length;i++){
     const rep=seleccion[i];
     const tGen=tipoEfectivo(rep)||'cobro';
-    const res=await dbEmitirCarta(rep,tGen,STATE.role.user);
+    const duenio=gestorDeCuenta(rep); // el gestor que recopiló esta cuenta
+    const res=await dbEmitirCarta(rep,tGen,duenio,STATE.role.user);
     if(res.db){
       emitidas++;
-      CARTAS.unshift({num:res.num,cod:rep.cod,pais:rep.pais,tipo:tGen,gestor:STATE.role.user,
+      CARTAS.unshift({num:res.num,cod:rep.cod,pais:rep.pais,tipo:tGen,gestor:duenio,
         fecha:new Date().toISOString().slice(0,10),autorizo:'—',entrega:'emitida',canal:null,evid:false,estado:'pendiente',
-        snapshot:{rep:Object.assign({},rep,{prev:[]}),gestor:STATE.role.user}});
+        emitidaPor:STATE.role.user,
+        snapshot:{rep:Object.assign({},rep,{prev:[]}),gestor:duenio,emitidaPor:STATE.role.user}});
     } else { errores++; }
     const pct=Math.round(((i+1)/n)*100);
     const pc=document.getElementById('pct'),ms=document.getElementById('genmsg');
@@ -1845,7 +1898,7 @@ function viewHist(){
       <td style="font-weight:500">${tipoLabel(rep,c.tipo)}</td>
       <td>${rep.nombre.split(' ').slice(0,3).join(' ')} <span class="fc" style="font-family:'JetBrains Mono';font-size:10px;padding:1px 5px;border-radius:4px;background:rgba(255,255,255,.06);margin-left:4px">${rep.pais}</span></td>
       <td><span style="font-family:'JetBrains Mono';font-size:12px;color:var(--txt-3)">${fmtFecha(c.fecha)}</span></td>
-      ${isSuper?`<td><span style="font-size:12px;color:var(--txt-2)">${(c.gestor||'—').split(' ')[0]} ${(c.gestor||'').split(' ')[2]?(c.gestor||'').split(' ')[2][0]+'.':''}</span></td>`:''}
+      ${isSuper?`<td><span style="font-size:12px;color:var(--txt-2)">${(c.gestor||'—').split(' ')[0]} ${(c.gestor||'').split(' ')[2]?(c.gestor||'').split(' ')[2][0]+'.':''}</span>${(c.emitidaPor&&c.emitidaPor!==c.gestor)?`<div style="font-size:10px;color:var(--txt-3);margin-top:2px">emitió: ${c.emitidaPor.split(' ')[0]}</div>`:''}</td>`:''}
       <td><span class="st ${e.st}"><i></i>${e.lab}</span> <span class="mtag" style="margin-left:6px;${c.estado==='aprobada'?'color:var(--ok);border-color:rgba(52,211,153,.3)':'color:var(--warn)'}">${c.estado==='aprobada'?'Aprobada':(c.estado==='pendiente'?'Por autorizar':(c.estado||''))}</span>${c.canal?`<span class="mtag" style="margin-left:7px">${CANALES[c.canal]}</span>`:''}</td>
       <td style="text-align:right">${accionEntrega(c,isSuper)}</td>
     </tr>`;}).join(''):`<tr><td colspan="${isSuper?7:6}" style="text-align:center;padding:36px;color:var(--txt-3)">No hay cartas en este rango${(HF.desde||HF.hasta)?' · prueba quitando el filtro de fecha':''}${HF.estado!=='todos'?' · prueba cambiando el filtro de estado':''}</td></tr>`}</tbody>
@@ -2625,7 +2678,7 @@ async function dbCargarCartas(){
       CARTAS.push({num:c.num_correlativo,cod:c.rep_codigo,pais:c.pais,tipo:c.tipo,gestor:(c.snapshot&&c.snapshot.gestor)||'—',
         fecha:String(c.fecha_emision||c.creada_en||'').slice(0,10),autorizo:(c.snapshot&&c.snapshot.autorizo)||'—',
         entrega:c.entrega_estado||'emitida',canal:c.canal,evid:!!c.evidencia_path,estado:c.estado,
-        dbId:c.id,snapshot:c.snapshot});
+        emitidaPor:(c.snapshot&&c.snapshot.emitidaPor)||null,dbId:c.id,snapshot:c.snapshot});
       if(c.snapshot&&c.snapshot.rep&&!REPS.find(r=>r.cod===c.rep_codigo&&r.pais===c.snapshot.rep.pais)){
         REPS.push(c.snapshot.rep);
       }
@@ -2633,7 +2686,7 @@ async function dbCargarCartas(){
     return true;
   }catch(e){return false;}
 }
-async function dbEmitirCarta(rep,tipo,gestorNombre){
+async function dbEmitirCarta(rep,tipo,gestorNombre,emitidaPor){
   if(!SB_OK||!sb) return {num:correlativo(rep),db:false};
   try{
     const {data:num,error:e1}=await sb.rpc('cartera_siguiente_correlativo',{p_pais:rep.pais});
@@ -2645,7 +2698,7 @@ async function dbEmitirCarta(rep,tipo,gestorNombre){
       num_correlativo:num,ref_archivo:ref,rep_codigo:rep.cod,pais:rep.pais,tipo:tipo,
       variante:v?v.id:null,fecha_emision:new Date().toISOString().slice(0,10),
       estado:'pendiente',entrega_estado:'emitida',
-      snapshot:{rep:Object.assign({},rep,{prev:[]}),gestor:gestorNombre,plantilla:getPlantilla(v?v.id:tipo)}});
+      snapshot:{rep:Object.assign({},rep,{prev:[]}),gestor:gestorNombre,emitidaPor:emitidaPor||gestorNombre,plantilla:getPlantilla(v?v.id:tipo)}});
     if(e2) throw e2;
     return {num:num,db:true};
   }catch(e){return {num:correlativo(rep),db:false,err:e.message};}
@@ -2778,7 +2831,14 @@ initGate();
 renderLogin();
 initSupabase().then(async()=>{
   await dbCargarFirmas();
-  if(SB_OK){ await dbCargarRepresentantes(); await dbCargarCartas(); RECOP_CACHE=await dbCargarRecopilaciones(); }
+  if(SB_OK){
+    await dbCargarRepresentantes();
+    // 1) recopilaciones primero: definen quién es dueño de cada cuenta
+    RECOP_CACHE=await dbCargarRecopilaciones(); construirDuenos();
+    // 2) luego las cartas, que ya pueden atribuirse al gestor correcto
+    await dbCargarCartas();
+    reasignarDuenosCartas();
+  }
   const lg=document.getElementById('login');
   if(lg&&!lg.classList.contains('hidden'))renderLogin();
 });
