@@ -1337,14 +1337,7 @@ function fusionarPD(ev){
   }
 }
 /* --- reset del sistema --- */
-async function resetSistema(){
-  if(!confirm('¿Borrar TODAS las cartas, la base, las recopilaciones y reiniciar la numeración? Esta acción es irreversible.'))return;
-  toast('info','Reiniciando datos…');
-  const ok=await dbReset();
-  CARTAS.length=0; REPS.length=0;
-  toast(ok?'ok':'info', ok?'Sistema reiniciado · listo para empezar de 0':'Reinicio local (sin conexión)');
-  viewUpload();
-}
+
 function filasConsolidado(){
   // arma el consolidado desde las recopilaciones reales de los gestores (Codigo,Pais,PD,Tipo)
   const filas=[]; const vistos=new Set();
@@ -2813,14 +2806,62 @@ async function dbCargarRecopilaciones(){
   }catch(e){return null;}
 }
 async function dbReset(){
-  if(!SB_OK||!sb) return false;
+  const errores=[];
+  if(!SB_OK||!sb) return {ok:false,errores:['sin conexión a Supabase']};
+  const borrarTabla=async(t,filtro)=>{
+    try{
+      const q=sb.from(t).delete();
+      const {error}= filtro==='pais' ? await q.neq('pais','__') : await q.gte('id',0);
+      if(error) errores.push(t+': '+error.message);
+    }catch(e){ errores.push(t+': '+e.message); }
+  };
+  await borrarTabla('cartera_cartas');
+  await borrarTabla('cartera_representantes');
+  await borrarTabla('cartera_recopilacion');
+  await borrarTabla('cartera_correlativos','pais');
+  await borrarTabla('cartera_auditoria');
+  await borrarTabla('cartera_delegaciones');
+  // vaciar el bucket de evidencias (las firmas NO se tocan)
   try{
-    await sb.from('cartera_cartas').delete().gte('id',0);
-    await sb.from('cartera_representantes').delete().gte('id',0);
-    await sb.from('cartera_recopilacion').delete().gte('id',0);
-    await sb.from('cartera_correlativos').delete().neq('pais','__');
-    return true;
-  }catch(e){return false;}
+    const {data:files}=await sb.storage.from('cartera_evidencias').list('',{limit:1000});
+    if(files&&files.length){
+      const {error}=await sb.storage.from('cartera_evidencias').remove(files.map(f=>f.name));
+      if(error) errores.push('evidencias: '+error.message);
+    }
+  }catch(e){ errores.push('evidencias: '+e.message); }
+  return {ok:errores.length===0, errores};
+}
+async function resetSistema(){
+  const paso1=confirm(
+    'REINICIAR EL SISTEMA\n\n'+
+    'Se borrarán de forma permanente:\n'+
+    '  • Todas las cartas emitidas y autorizadas\n'+
+    '  • La base de cuentas cargada\n'+
+    '  • Las recopilaciones de los gestores\n'+
+    '  • Las evidencias de entrega\n'+
+    '  • La numeración de correlativos (vuelve a 0001)\n\n'+
+    'NO se borran: usuarios, plantillas ni firmas.\n\n'+
+    'Esta acción no se puede deshacer. ¿Continuar?');
+  if(!paso1) return;
+  const conf=prompt('Para confirmar, escribe:  BORRAR');
+  if((conf||'').trim().toUpperCase()!=='BORRAR'){ toast('info','Reinicio cancelado · no se borró nada'); return; }
+
+  toast('info','Reiniciando… no cierres la ventana');
+  const res=await dbReset();
+
+  // limpiar TODO lo que vive en memoria (si no, el mapa viejo persiste)
+  CARTAS.length=0; REPS.length=0;
+  RECOP_CACHE=null; DUENO_CUENTA={};
+  STATE.sel.clear(); STATE.recopSubida=false;
+  buildNav();
+
+  if(res.ok){
+    toast('ok','Sistema reiniciado · listo para empezar de cero');
+  } else {
+    toast('info','Reinicio parcial · revisa la consola (F12)');
+    console.warn('[Cartera] No se pudo borrar:', res.errores);
+  }
+  go('upload');
 }
 
 
