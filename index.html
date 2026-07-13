@@ -883,11 +883,9 @@ async function doLogin(id){
      para no bloquear a nadie. Si Auth rechaza la clave, se rechaza: no hay bypass. */
   let role, cred;
   if(id==='gestor'){
-    let g;
-    if(PRUEBAS){ g=GESTORES.find(x=>x.cod===document.getElementById('loginUser').value); }
-    else { const m=(document.getElementById('loginKey').value||'').trim().match(/^avon\s*(\d+)$/i);
-      g=m&&GESTORES.find(x=>x.cod===m[1]); }
-    if(!g){toast('info','Clave incorrecta · usa Avon + tu código');return;}
+    // Opción B: manda el NOMBRE elegido en el desplegable; la clave se valida contra ESA cuenta.
+    const g=GESTORES.find(x=>x.cod===document.getElementById('loginUser').value);
+    if(!g){toast('info','Selecciona tu usuario');return;}
     role={id:'gestor',nombre:'Gestor de Cobros',user:g.nombre,av:iniciales(g.nombre),cod:g.cod};
     cred={email:g.email,pass:(document.getElementById('loginKey')?.value||'').trim()};
   }else{
@@ -898,8 +896,10 @@ async function doLogin(id){
   }
   // Modo pruebas: sin clave (igual que antes)
   if(PRUEBAS){ STATE.role=role; return enterApp(); }
-  // Validación local de respaldo: gestor = el código ya casó con el patrón Avon+código; super = hash
-  const okLocal = async()=> id==='gestor' ? true : (await sha256Hex(cred.pass)===SUPER_HASH);
+  // Validación local de respaldo (solo sin conexión). Gestor: patrón Avon+código del elegido; super: hash.
+  const okLocal = async()=> id==='gestor'
+    ? cred.pass.toLowerCase().replace(/\s+/g,'')===('avon'+String(role.cod||'')).toLowerCase()
+    : (await sha256Hex(cred.pass)===SUPER_HASH);
   let autenticado=false;
   if(SB_OK && sb && cred.email){
     try{
