@@ -874,21 +874,52 @@ function pickRole(id){
   setTimeout(()=>document.getElementById('loginKey')?.focus(),60);
 }
 async function doLogin(id){
+  /* ===== FASE 2 · autenticación real contra Supabase Auth =====
+     Para el usuario NO cambia nada: el gestor sigue escribiendo "Avon + código"
+     y la supervisión su clave. La app resuelve el correo internamente y valida
+     con sb.auth.signInWithPassword, que además deja una sesión Auth (JWT) para
+     que el RLS de la Fase 3 pueda funcionar.
+     Respaldo local (hash) SOLO cuando no hay conexión a Supabase (preview/offline),
+     para no bloquear a nadie. Si Auth rechaza la clave, se rechaza: no hay bypass. */
+  let role, cred;
   if(id==='gestor'){
     let g;
     if(PRUEBAS){ g=GESTORES.find(x=>x.cod===document.getElementById('loginUser').value); }
     else { const m=(document.getElementById('loginKey').value||'').trim().match(/^avon\s*(\d+)$/i);
-      g=m&&GESTORES.find(x=>x.cod===m[1]); if(!g){toast('info','Clave incorrecta · usa Avon + tu código');return;} }
-    STATE.role={id:'gestor',nombre:'Gestor de Cobros',user:g.nombre,av:iniciales(g.nombre),cod:g.cod};
+      g=m&&GESTORES.find(x=>x.cod===m[1]); }
+    if(!g){toast('info','Clave incorrecta · usa Avon + tu código');return;}
+    role={id:'gestor',nombre:'Gestor de Cobros',user:g.nombre,av:iniciales(g.nombre),cod:g.cod};
+    cred={email:g.email,pass:(document.getElementById('loginKey')?.value||'').trim()};
   }else{
     const nm=document.getElementById('loginUser').value, s=SUPERVISION.find(x=>x.nombre===nm);
-    if(!PRUEBAS){
-      const k=(document.getElementById('loginKey').value||'').trim();
-      if(await sha256Hex(k)!==SUPER_HASH){toast('info','Clave de supervisión incorrecta');return;}
-    }
-    STATE.role={id:'super',nombre:s.cargo,user:s.nombre,av:iniciales(s.nombre)};
+    if(!s){toast('info','Selecciona un usuario de supervisión');return;}
+    role={id:'super',nombre:s.cargo,user:s.nombre,av:iniciales(s.nombre)};
+    cred={email:s.email,pass:(document.getElementById('loginKey')?.value||'').trim()};
   }
-  enterApp();
+  // Modo pruebas: sin clave (igual que antes)
+  if(PRUEBAS){ STATE.role=role; return enterApp(); }
+  // Validación local de respaldo: gestor = el código ya casó con el patrón Avon+código; super = hash
+  const okLocal = async()=> id==='gestor' ? true : (await sha256Hex(cred.pass)===SUPER_HASH);
+  let autenticado=false;
+  if(SB_OK && sb && cred.email){
+    try{
+      const {error}=await sb.auth.signInWithPassword({email:cred.email,password:cred.pass});
+      if(!error){ autenticado=true; }
+      else{
+        const invalida=(error.status===400)||/invalid login/i.test(error.message||'');
+        if(invalida){ toast('info', id==='gestor'?'Clave incorrecta · usa Avon + tu código':'Clave de supervisión incorrecta'); return; }
+        console.warn('Supabase Auth no disponible, uso validación local:', error);
+        autenticado=await okLocal();               // error de red/infra (no de credenciales) → no bloquear
+      }
+    }catch(e){
+      console.warn('Excepción en Supabase Auth, uso validación local:', e);
+      autenticado=await okLocal();
+    }
+  }else{
+    autenticado=await okLocal();                    // sin conexión (preview/offline) o sin correo vinculado
+  }
+  if(!autenticado){ toast('info', id==='gestor'?'Clave incorrecta · usa Avon + tu código':'Clave de supervisión incorrecta'); return; }
+  STATE.role=role; enterApp();
 }
 function enterApp(){
   document.getElementById('login').classList.add('hidden');
@@ -899,7 +930,8 @@ function enterApp(){
   aplicarTema(temaActual());
   buildNav(); go(STATE.role.id==='gestor'?'perfil':'dash');
 }
-function logout(){STATE={role:null,view:'dash',tipo:'auto',sel:new Set(),emitidas:STATE.emitidas,firmas:STATE.firmas,delegado:STATE.delegado,plantillas:STATE.plantillas};
+function logout(){try{ if(sb&&sb.auth) sb.auth.signOut(); }catch(e){}
+  STATE={role:null,view:'dash',tipo:'auto',sel:new Set(),emitidas:STATE.emitidas,firmas:STATE.firmas,delegado:STATE.delegado,plantillas:STATE.plantillas};
   document.getElementById('main').classList.add('hidden');
   document.getElementById('login').classList.remove('hidden');renderLogin();}
 
@@ -2646,8 +2678,8 @@ async function initSupabase(){
     if(cp.error) throw cp.error; if(us.error) throw us.error; if(pl.error) throw pl.error;
     if(cp.data&&cp.data.length){const np={};cp.data.forEach(r=>{np[r.iso]={nombre:r.nombre,ciudad:r.ciudad_emision,entidad:r.razon_social,moneda:r.moneda,cod:r.cod_area};});PAISES=np;}
     if(us.data&&us.data.length){
-      SUPERVISION=us.data.filter(u=>u.rol==='supervision').map(u=>({cod:u.codigo_empleado||'—',nombre:u.nombre,cargo:u.cargo}));
-      GESTORES=us.data.filter(u=>u.rol==='gestor').map(u=>({cod:u.codigo_empleado,nombre:u.nombre}));
+      SUPERVISION=us.data.filter(u=>u.rol==='supervision').map(u=>({cod:u.codigo_empleado||'—',nombre:u.nombre,cargo:u.cargo,email:u.email||null}));
+      GESTORES=us.data.filter(u=>u.rol==='gestor').map(u=>({cod:u.codigo_empleado,nombre:u.nombre,email:u.email||null}));
       USUARIOS=us.data.map(u=>({cod:u.codigo_empleado||'—',nombre:u.nombre,rol:u.rol==='supervision'?'super':'gestor',cargo:u.cargo,av:iniciales(u.nombre),cartera:u.cartera_pais||'Sin asignar',activo:u.activo!==false}));
       ROLES[0].who=GESTORES.length+' gestores'; if(GESTORES[0])ROLES[0].user=GESTORES[0].nombre;
     }
