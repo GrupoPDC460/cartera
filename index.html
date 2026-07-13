@@ -558,8 +558,17 @@ tbody tr.blocked{opacity:.62}
 
 /* ============ Cartera · CRM de cartas (prototipo demo) ============ */
 
-/* ===== PORTAL DE ACCESO · clave PDC2026 ===== */
-const GATE_KEY='PDC2026';
+/* ===== PORTAL DE ACCESO =====
+   Las claves NO se guardan en texto plano. Se comparan por su huella SHA-256,
+   que es irreversible: desde el hash no se puede reconstruir la clave.
+   (Seguridad real llega con Supabase Auth + RLS; esto solo evita que la
+    clave quede a la vista de cualquiera que abra el repositorio público.) */
+const GATE_HASH='2ec9cced0674ec85ce3352937a5be96e4debb031b59d7ae2ec668d7e94f37dd5';
+const SUPER_HASH='da9bf240cee04c61113d40d66214a815310e1829f36dc317e8bc62a010edc1f9';
+async function sha256Hex(txt){
+  const buf=await crypto.subtle.digest('SHA-256', new TextEncoder().encode(txt));
+  return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
+}
 /* Sello oficial · Departamento de Cobros · se estampa a la derecha de la firma */
 /* Firmas precargadas (respaldo). Si el supervisor sube otra, la suya manda. */
 const FIRMAS_BASE={
@@ -637,10 +646,10 @@ function abrirGate(instant){
   if(instant){ g.style.transition='none'; g.classList.add('hidden'); setTimeout(()=>g.remove(),40); return; }
   g.classList.add('hidden'); setTimeout(()=>g.remove(),850);
 }
-function validarGate(){
+async function validarGate(){
   const inp=document.getElementById('gateKey'), msg=document.getElementById('gateMsg');
   const v=(inp.value||'').trim();
-  if(v===GATE_KEY){
+  if(await sha256Hex(v)===GATE_HASH){
     try{ sessionStorage.setItem('cartera_gate','ok'); }catch(e){}
     msg.classList.remove('show'); abrirGate(false);
   } else {
@@ -864,7 +873,7 @@ function pickRole(id){
     </div>`;
   setTimeout(()=>document.getElementById('loginKey')?.focus(),60);
 }
-function doLogin(id){
+async function doLogin(id){
   if(id==='gestor'){
     let g;
     if(PRUEBAS){ g=GESTORES.find(x=>x.cod===document.getElementById('loginUser').value); }
@@ -875,7 +884,7 @@ function doLogin(id){
     const nm=document.getElementById('loginUser').value, s=SUPERVISION.find(x=>x.nombre===nm);
     if(!PRUEBAS){
       const k=(document.getElementById('loginKey').value||'').trim();
-      if(k!=='AvonVD2026'){toast('info','Clave de supervisión incorrecta');return;}
+      if(await sha256Hex(k)!==SUPER_HASH){toast('info','Clave de supervisión incorrecta');return;}
     }
     STATE.role={id:'super',nombre:s.cargo,user:s.nombre,av:iniciales(s.nombre)};
   }
