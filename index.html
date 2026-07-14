@@ -919,7 +919,20 @@ async function doLogin(id){
     autenticado=await okLocal();                    // sin conexión (preview/offline) o sin correo vinculado
   }
   if(!autenticado){ toast('info', id==='gestor'?'Clave incorrecta · usa Avon + tu código':'Clave de supervisión incorrecta'); return; }
-  STATE.role=role; enterApp();
+  STATE.role=role; enterApp(); cargarDatosSesion();
+}
+/* Carga los datos sensibles DESPUÉS del login (con sesión Auth válida) y refresca la vista.
+   Antes se hacían en el arranque con el anon key; moverlos aquí es lo que permite el RLS. */
+async function cargarDatosSesion(){
+  if(!SB_OK||!sb) return;
+  try{
+    await dbCargarFirmas();
+    await dbCargarRepresentantes();
+    RECOP_CACHE=await dbCargarRecopilaciones(); construirDuenos();
+    await dbCargarCartas();
+    await reasignarDuenosCartas();
+  }catch(e){ console.warn('cargarDatosSesion:', e); }
+  try{ buildNav(); go(STATE.view||(STATE.role&&STATE.role.id==='gestor'?'perfil':'dash')); }catch(e){}
 }
 function enterApp(){
   document.getElementById('login').classList.add('hidden');
@@ -2950,16 +2963,10 @@ async function resetSistema(){
 /* init */
 initGate();
 renderLogin();
-initSupabase().then(async()=>{
-  await dbCargarFirmas();
-  if(SB_OK){
-    await dbCargarRepresentantes();
-    // 1) recopilaciones primero: definen quién es dueño de cada cuenta
-    RECOP_CACHE=await dbCargarRecopilaciones(); construirDuenos();
-    // 2) luego las cartas, que ya pueden atribuirse al gestor correcto
-    await dbCargarCartas();
-    reasignarDuenosCartas();
-  }
+initSupabase().then(()=>{
+  // Los datos sensibles (representantes, recopilaciones, cartas, firmas) YA NO se cargan
+  // aquí con el anon key: ahora se cargan tras iniciar sesión (cargarDatosSesion), para que
+  // el RLS de la Fase 3 pueda exigir sesión válida sin dejar pantallas vacías.
   const lg=document.getElementById('login');
   if(lg&&!lg.classList.contains('hidden'))renderLogin();
 });
