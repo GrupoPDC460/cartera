@@ -886,11 +886,13 @@ async function doLogin(id){
     // Opción B: manda el NOMBRE elegido en el desplegable; la clave se valida contra ESA cuenta.
     const g=GESTORES.find(x=>x.cod===document.getElementById('loginUser').value);
     if(!g){toast('info','Selecciona tu usuario');return;}
+    if(g.activo===false){toast('info','Usuario inactivo · contacta a supervisión');return;}
     role={id:'gestor',nombre:'Gestor de Cobros',user:g.nombre,av:iniciales(g.nombre),cod:g.cod};
     cred={email:g.email,pass:(document.getElementById('loginKey')?.value||'').trim()};
   }else{
     const nm=document.getElementById('loginUser').value, s=SUPERVISION.find(x=>x.nombre===nm);
     if(!s){toast('info','Selecciona un usuario de supervisión');return;}
+    if(s.activo===false){toast('info','Usuario inactivo · contacta a supervisión');return;}
     role={id:'super',nombre:s.cargo,user:s.nombre,av:iniciales(s.nombre)};
     cred={email:s.email,pass:(document.getElementById('loginKey')?.value||'').trim()};
   }
@@ -2581,6 +2583,16 @@ function toast(type,msg){
 
 /* ============ PERSONAS (administración) ============ */
 let userFilter='todos';
+function aplicarUsuarios(rows){
+  SUPERVISION=rows.filter(u=>u.rol==='supervision').map(u=>({cod:u.codigo_empleado||'—',nombre:u.nombre,cargo:u.cargo,email:u.email||null,activo:u.activo!==false}));
+  GESTORES=rows.filter(u=>u.rol==='gestor').map(u=>({cod:u.codigo_empleado,nombre:u.nombre,email:u.email||null,activo:u.activo!==false}));
+  USUARIOS=rows.map(u=>({id:u.id,email:u.email||null,cod:u.codigo_empleado||'—',nombre:u.nombre,rol:u.rol==='supervision'?'super':'gestor',cargo:u.cargo,av:iniciales(u.nombre),cartera:u.cartera_pais||'Sin asignar',activo:u.activo!==false}));
+  ROLES[0].who=GESTORES.length+' gestores'; if(GESTORES[0])ROLES[0].user=GESTORES[0].nombre;
+}
+async function recargarUsuarios(){
+  if(!SB_OK||!sb) return;
+  try{ const {data,error}=await sb.from('cartera_usuarios').select('*'); if(!error&&data&&data.length) aplicarUsuarios(data); }catch(e){}
+}
 function viewUsers(){
  try{
   const sup=USUARIOS.filter(u=>u.rol==='super');
@@ -2601,10 +2613,9 @@ function viewUsers(){
     </div>
     <div style="flex:1"></div>
     <span class="pill ok" style="align-self:flex-end;height:fit-content">${svg(ICO.check,12)} ${act} activos</span>
-    <div class="field"><label>&nbsp;</label><button class="btn primary" onclick="userModal()">${svg(ICO.user)} Agregar persona</button></div>
   </div>
   <div class="tbl-wrap glass"><table>
-    <thead><tr><th>Persona</th><th>Cód. empleado</th><th>Rol</th><th>Cartera asignada</th><th>PIN</th><th>Estado</th><th></th></tr></thead>
+    <thead><tr><th>Persona</th><th>Cód. empleado</th><th>Rol</th><th>Cartera asignada</th><th>Correo</th><th>Estado</th><th></th></tr></thead>
     <tbody>${list.map((u,idx)=>{
       const i=USUARIOS.indexOf(u);
       const av=u.rol==='super'?'var(--accent-v)':'linear-gradient(135deg,#2DD4BF,#38BDF8)';
@@ -2617,8 +2628,7 @@ function viewUsers(){
           ? `<span class="pd-chip pd-C" style="background:rgba(168,85,247,.14);color:#C084FC;border-color:rgba(168,85,247,.25)">Supervisión</span>`
           : `<span class="pd-chip pd-A">Gestor</span>`}</td>
         <td><span style="font-size:12.5px;color:${u.cartera==='Sin asignar'?'var(--txt-3)':'var(--txt)'}">${u.cartera}</span></td>
-        <td><span style="font-family:'JetBrains Mono';font-size:13px;letter-spacing:2px;color:var(--txt-3)">••••</span>
-            <span style="font-size:10.5px;color:var(--teal);cursor:pointer;margin-left:6px" onclick="toast('info','Nuevo PIN generado para ${u.nombre.split(' ')[0]}')">regenerar</span></td>
+        <td><span style="font-family:'JetBrains Mono';font-size:11.5px;color:var(--txt-3)">${u.email||'—'}</span></td>
         <td><span class="st ${u.activo?'sent':'rej'}"><i></i>${u.activo?'Activo':'Inactivo'}</span></td>
         <td style="text-align:right"><div style="display:flex;gap:6px;justify-content:flex-end">
           <button class="btn ghost sm" style="padding:6px 11px" onclick="userModal(${i})">Editar</button>
@@ -2631,8 +2641,14 @@ function viewUsers(){
  }
 }
 function setUF(f){userFilter=f;viewUsers();}
-function toggleUser(i){USUARIOS[i].activo=!USUARIOS[i].activo;
-  toast('info',`${USUARIOS[i].nombre.split(' ')[0]} ${USUARIOS[i].activo?'activado':'desactivado'}`);viewUsers();}
+async function toggleUser(i){
+  const fila=USUARIOS[i]; const nuevo=!fila.activo;
+  if(SB_OK&&sb&&fila&&fila.id!=null){
+    const {error}=await sb.from('cartera_usuarios').update({activo:nuevo}).eq('id',fila.id);
+    if(error){toast('bad','No se pudo guardar: '+error.message);return;}
+    await recargarUsuarios();
+  }else{ fila.activo=nuevo; }
+  toast('info',`${fila.nombre.split(' ')[0]} ${nuevo?'activado':'desactivado'}`);viewUsers();}
 function userModal(i){
   const ed=i!=null, u=ed?USUARIOS[i]:{nombre:'',cod:'',rol:'gestor',cargo:'Gestor de Cobros',cartera:'Sin asignar'};
   const paises=['Sin asignar','Todos los países',...Object.values(PAISES).map(p=>p.nombre)];
@@ -2652,8 +2668,6 @@ function userModal(i){
         <div class="field"><label>Cartera asignada</label>
           <select class="select" id="f_cartera" style="min-width:0">
             ${paises.map(p=>`<option ${u.cartera===p?'selected':''}>${p}</option>`).join('')}</select></div>
-        <div class="field"><label>PIN de acceso</label>
-          <input class="input" id="f_pin" style="min-width:0" value="${ed?'':Math.floor(1000+Math.random()*9000)}" placeholder="4 dígitos"></div>
       </div>
       <div style="display:flex;gap:10px;margin-top:24px">
         <button class="btn ghost" style="flex:1;justify-content:center" onclick="closeModal()">Cancelar</button>
@@ -2662,15 +2676,28 @@ function userModal(i){
     </div>`;
   document.getElementById('overlay').classList.add('show');
 }
-function saveUser(i){
+async function saveUser(i){
   const nombre=document.getElementById('f_nombre').value.trim();
   if(!nombre){toast('info','Escribe el nombre de la persona');return;}
-  const data={nombre,cod:document.getElementById('f_cod').value.trim()||'—',
-    rol:document.getElementById('f_rol').value,cartera:document.getElementById('f_cartera').value,
-    av:iniciales(nombre),activo:true};
-  data.cargo=data.rol==='super'?'Supervisor de Cobros':'Gestor de Cobros';
-  if(i>=0){USUARIOS[i]={...USUARIOS[i],...data};toast('ok',`${nombre.split(' ')[0]} actualizado`);}
-  else{USUARIOS.push(data);toast('ok',`Acceso creado para ${nombre.split(' ')[0]}`);}
+  if(i<0){toast('info','Crear una persona nueva se hace en Supabase (receta de traspaso de cupo). Aquí puedes editar los existentes.');return;}
+  const cod=document.getElementById('f_cod').value.trim();
+  const rolApp=document.getElementById('f_rol').value;                 // 'gestor' | 'super'
+  const cartera=document.getElementById('f_cartera').value;
+  const fila=USUARIOS[i];
+  const rolDb=rolApp==='super'?'supervision':'gestor';
+  const carteraDb=(cartera==='Sin asignar')?null:cartera;
+  if(SB_OK&&sb&&fila&&fila.id!=null){
+    const {error}=await sb.from('cartera_usuarios')
+      .update({nombre,codigo_empleado:cod||null,rol:rolDb,cartera_pais:carteraDb})
+      .eq('id',fila.id);
+    if(error){toast('bad','No se pudo guardar: '+error.message);return;}
+    await recargarUsuarios();                                          // refresca listado + login con datos nuevos
+  }else{
+    // sin conexión (preview): solo memoria
+    const data={nombre,cod:cod||'—',rol:rolApp,cargo:rolApp==='super'?'Supervisor de Cobros':'Gestor de Cobros',cartera,av:iniciales(nombre)};
+    USUARIOS[i]={...USUARIOS[i],...data};
+  }
+  toast('ok',`${nombre.split(' ')[0]} actualizado`);
   closeModal();viewUsers();
 }
 
@@ -2690,12 +2717,7 @@ async function initSupabase(){
     ]),8000);
     if(cp.error) throw cp.error; if(us.error) throw us.error; if(pl.error) throw pl.error;
     if(cp.data&&cp.data.length){const np={};cp.data.forEach(r=>{np[r.iso]={nombre:r.nombre,ciudad:r.ciudad_emision,entidad:r.razon_social,moneda:r.moneda,cod:r.cod_area};});PAISES=np;}
-    if(us.data&&us.data.length){
-      SUPERVISION=us.data.filter(u=>u.rol==='supervision').map(u=>({cod:u.codigo_empleado||'—',nombre:u.nombre,cargo:u.cargo,email:u.email||null}));
-      GESTORES=us.data.filter(u=>u.rol==='gestor').map(u=>({cod:u.codigo_empleado,nombre:u.nombre,email:u.email||null}));
-      USUARIOS=us.data.map(u=>({cod:u.codigo_empleado||'—',nombre:u.nombre,rol:u.rol==='supervision'?'super':'gestor',cargo:u.cargo,av:iniciales(u.nombre),cartera:u.cartera_pais||'Sin asignar',activo:u.activo!==false}));
-      ROLES[0].who=GESTORES.length+' gestores'; if(GESTORES[0])ROLES[0].user=GESTORES[0].nombre;
-    }
+    if(us.data&&us.data.length){ aplicarUsuarios(us.data); }
     if(pl.data&&pl.data.length){pl.data.forEach(r=>{if(r.texto)PLANTILLAS[r.clave]=r.texto;});}
     SB_OK=true; SB_MSG='Conectado a Supabase';
   }catch(e){
