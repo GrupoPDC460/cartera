@@ -1842,10 +1842,12 @@ function frame(o){
     <div class="lf-sign"><p>Atentamente,</p>
       <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:26px">
         <div style="flex:1;min-width:0">
+          <div style="position:relative;height:56px">
           ${(STATE.firmas&&STATE.firmas[o.firmante])
-            ? `<img src="${STATE.firmas[o.firmante]}" style="height:74px;width:auto;max-width:230px;object-fit:contain;object-position:left bottom;display:block;margin:0 0 -14px 8px;position:relative;z-index:1">`
-            : '<div style="height:74px"></div>'}
-          <div class="lf-sline"></div>
+            ? `<img src="${STATE.firmas[o.firmante]}" style="height:66px;width:auto;max-width:230px;display:block;position:absolute;left:8px;bottom:-6px">`
+            : ''}
+          </div>
+          <div style="width:220px;border-top:1px solid #000;margin:0 0 6px"></div>
           <p class="nm">${o.firmante}</p><p>${o.cargo}</p><p>${o.entidad}</p>
           ${o.whatsapp?`<p style="font-size:10.5px;color:#555;margin-top:7px">WhatsApp: <b style="color:#333">${o.whatsapp}</b></p>`:''}
         </div>
@@ -1996,6 +1998,32 @@ function repDeCarta(cod,num){
 }
 function fmtFecha(f){if(!f)return '—';const[y,m,d]=String(f).split('-');return `${d}/${m}/${y}`;}
 let HF={desde:'',hasta:'',gestor:'todos',estado:'todos'};
+let HIST_LISTA=[];
+function exportarHist(){
+  if(typeof XLSX==='undefined'){toast('info','No se pudo cargar el exportador');return;}
+  const rows=(HIST_LISTA||[]).map(c=>{
+    const rep=(c.snapshot&&c.snapshot.rep)||REPS.find(r=>r.cod===c.cod)||{nombre:'',pais:c.pais||''};
+    return {
+      'N° de carta':c.num,
+      'Tipo':tipoLabel(rep,c.tipo),
+      'Representante':rep.nombre||'',
+      'Código':c.cod,
+      'País':rep.pais||c.pais||'',
+      'Fecha':c.fecha||'',
+      'Gestor':c.gestor||'',
+      'Estado':c.estado==='aprobada'?'Aprobada':(c.estado==='pendiente'?'Por autorizar':(c.estado||'')),
+      'Entrega':(ENT[c.entrega]||ENT.emitida).lab,
+      'Canal':c.canal?CANALES[c.canal]:'',
+      'Evidencia':c.evid?'Sí':'No'
+    };
+  });
+  if(!rows.length){toast('info','No hay cartas para exportar en este filtro');return;}
+  const ws=XLSX.utils.json_to_sheet(rows);
+  ws['!cols']=[{wch:16},{wch:26},{wch:26},{wch:12},{wch:8},{wch:12},{wch:24},{wch:14},{wch:16},{wch:12},{wch:10}];
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Cartas');
+  XLSX.writeFile(wb,`cartera_historial_${new Date().toISOString().slice(0,10)}.xlsx`);
+  toast('ok',`Excel exportado · ${rows.length} cartas`);
+}
 function viewHist(){
   const isSuper=STATE.role.id==='super';
   let lista = isSuper ? CARTAS.slice() : CARTAS.filter(c=>(c.gestor||'').trim()===(STATE.role.user||'').trim());
@@ -2012,6 +2040,7 @@ function viewHist(){
   const pendientesDisp=misTodas.filter(c=>c.estado!=='aprobada').length;
   // índice donde empiezan las NO autorizadas (para el separador visual)
   const corte=lista.findIndex(c=>c.estado!=='aprobada');
+  HIST_LISTA=lista;
   document.getElementById('view').innerHTML=`
   ${!isSuper?`<div style="margin-bottom:14px;padding:13px 16px;border-radius:12px;background:rgba(56,189,248,.06);border:1px solid rgba(56,189,248,.16);font-size:12.5px;color:var(--txt-2);line-height:1.6;display:flex;gap:10px;align-items:flex-start">
     ${svg(ICO.bolt,15)}<div><b>¿Cómo funciona?</b> 1) Generas la carta → queda <b>Por autorizar</b>. 2) Un supervisor la <b>firma</b>. 3) Ya firmada, puedes <b>descargar el PDF</b> y <b>enviarla a la gerente</b>. 4) Cuando llegue a la representante, <b>registras la entrega con evidencia</b>.</div></div>`:''}
@@ -2028,7 +2057,7 @@ function viewHist(){
     ${(HF.desde||HF.hasta)?`<div class="field"><label>&nbsp;</label><button class="btn ghost" onclick="HF.desde='';HF.hasta='';viewHist()">Quitar filtro de fecha</button></div>`:''}
     <div style="flex:1"></div>
     <div class="field"><label>&nbsp;</label><button class="btn primary" ${aprobadasDisp?'':'disabled'} onclick="descargarZip()">${svg(ICO.down)} Descargar aprobadas (ZIP)${aprobadasDisp?` · ${aprobadasDisp}`:''}</button></div>
-    <div class="field"><label>&nbsp;</label><button class="btn ghost" onclick="toast('ok','Exportado a Excel')">${svg(ICO.down)} Excel</button></div>
+    <div class="field"><label>&nbsp;</label><button class="btn ghost" onclick="exportarHist()">${svg(ICO.down)} Excel</button></div>
   </div>
   <div class="tbl-wrap glass"><table>
     <thead><tr><th>N° de carta</th><th>Tipo</th><th>Representante</th><th>Fecha</th>${isSuper?'<th>Gestor</th>':''}<th>Estado de entrega</th><th></th></tr></thead>
@@ -2053,11 +2082,33 @@ function viewHist(){
     </tr>`;}).join(''):`<tr><td colspan="${isSuper?7:6}" style="text-align:center;padding:36px;color:var(--txt-3)">No hay cartas en este rango${(HF.desde||HF.hasta)?' · prueba quitando el filtro de fecha':''}${HF.estado!=='todos'?' · prueba cambiando el filtro de estado':''}</td></tr>`}</tbody>
   </table></div>`;
 }
+async function verEvidencia(num){
+  const c=CARTAS.find(x=>String(x.num)===String(num));
+  if(!c||!c.evidPath){toast('info','Aún no hay archivo de evidencia adjunto');return;}
+  if(!SB_OK||!sb){toast('info','La evidencia no está disponible sin conexión');return;}
+  toast('info','Cargando evidencia…');
+  try{
+    const {data,error}=await sb.storage.from('cartera_evidencias').download(c.evidPath);
+    if(error||!data) throw error||new Error('sin datos');
+    const url=URL.createObjectURL(data);
+    const esImg=/\.(png|jpe?g|webp|gif)$/i.test(c.evidPath);
+    document.getElementById('modal').innerHTML=`
+      <div class="modal-h">${svg(ICO.check,18)}<div><h3>Evidencia de entrega · ${num}</h3>
+        <p style="font-size:11.5px;color:var(--txt-3);margin-top:2px">${c.canal?CANALES[c.canal]+' · ':''}entregada a la representante</p></div>
+        <div class="x" onclick="closeModal()">${svg(ICO.x,16)}</div></div>
+      <div class="modal-body" style="text-align:center;padding:20px">
+        ${esImg
+          ? `<img src="${url}" style="max-width:100%;max-height:66vh;border-radius:10px;border:1px solid rgba(255,255,255,.1)">`
+          : `<p style="color:var(--txt-2);margin-bottom:14px">Archivo adjunto: ${c.evidPath}</p><a class="btn primary" href="${url}" download="${c.evidPath}">${svg(ICO.down)} Descargar archivo</a>`}
+      </div>`;
+    document.getElementById('overlay').classList.add('show');
+  }catch(e){toast('info','No se pudo cargar la evidencia · '+(e&&e.message?e.message:''));}
+}
 function accionEntrega(c,isSuper){
   const rep=(c.snapshot&&c.snapshot.rep)||REPS.find(r=>r.cod===c.cod);
   const ver=`<button class="btn ghost sm" style="padding:6px 11px" onclick="showLetter('${c.cod}','${c.tipo}','${c.num}')">Ver</button>`;
   const pdf=(c.estado==='aprobada'&&rep)?`<button class="btn ghost sm" style="padding:6px 11px;color:var(--teal)" onclick="descargarPDFUnico('${c.cod}','${c.tipo}','${c.num}')">${svg(ICO.down,13)} PDF</button>`:'';
-  const evid=c.evid?`<button class="btn ghost sm" style="padding:6px 11px;color:var(--ok)" onclick="toast('info','Evidencia: ${CANALES[c.canal]} · entregada a la representante')">Evidencia</button>`:'';
+  const evid=c.evid?`<button class="btn ghost sm" style="padding:6px 11px;color:var(--ok)" onclick="verEvidencia('${c.num}')">${svg(ICO.check,13)} Evidencia</button>`:'';
   if(isSuper) return `<div style="display:flex;gap:6px;justify-content:flex-end">${evid}${pdf}${ver}</div>`;
   // gestor: no puede avanzar la carta hasta que un supervisor la apruebe/firme
   let acc='';
@@ -2850,7 +2901,7 @@ async function dbCargarCartas(){
     (data||[]).forEach(c=>{
       CARTAS.push({num:c.num_correlativo,cod:c.rep_codigo,pais:c.pais,tipo:c.tipo,variante:c.variante,gestor:(c.snapshot&&c.snapshot.gestor)||'—',
         fecha:String(c.fecha_emision||c.creada_en||'').slice(0,10),autorizo:(c.snapshot&&c.snapshot.autorizo)||'—',
-        entrega:c.entrega_estado||'emitida',canal:c.canal,evid:!!c.evidencia_path,estado:c.estado,
+        entrega:c.entrega_estado||'emitida',canal:c.canal,evid:!!c.evidencia_path,evidPath:c.evidencia_path||null,estado:c.estado,
         emitidaPor:(c.snapshot&&c.snapshot.emitidaPor)||null,dbId:c.id,snapshot:c.snapshot});
       if(c.snapshot&&c.snapshot.rep&&!REPS.find(r=>r.cod===c.rep_codigo&&r.pais===c.snapshot.rep.pais)){
         REPS.push(c.snapshot.rep);
