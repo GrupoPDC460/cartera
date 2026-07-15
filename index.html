@@ -1822,8 +1822,18 @@ function letterHTML(rep,tipo,num){
   if(tipo==='cobro'){const v=variantePorPD(rep.inact,rep.estatus);key=v.id;asunto=v.nombre;}
   else{key=tipo;destinatario=false;titulo={finiquito:'FINIQUITO Y CONSTANCIA DE NO ADEUDO',aldia:'CONSTANCIA DE CUENTA AL DÍA',saldo:'CONSTANCIA DE SALDO PENDIENTE'}[tipo];}
   const parrafos=fillTokens(getPlantilla(key),ctx).split('\n').filter(s=>s.trim()).map(t=>`<p>${t}</p>`).join('');
-  const firmante=(STATE.role&&STATE.role.id==='super')?STATE.role.user:'Daniel Monge';
-  const cargo=(STATE.role&&STATE.role.id==='super')?STATE.role.nombre:'Supervisor de Cobros';
+  // Firmante = quien AUTORIZÓ la carta (queda en su registro, es la firma legal).
+  // Si la carta aún no está autorizada, es solo vista previa con el supervisor actual.
+  const cartaRef=(num!=null)?CARTAS.find(x=>String(x.num)===String(num)):null;
+  let firmante,cargo;
+  if(cartaRef&&cartaRef.estado==='aprobada'&&cartaRef.autorizo&&cartaRef.autorizo!=='—'){
+    firmante=cartaRef.autorizo;
+    const sup=SUPERVISION.find(s=>s.nombre===firmante);
+    cargo=(sup&&sup.cargo)||'Supervisor de Cobros';
+  }else{
+    firmante=(STATE.role&&STATE.role.id==='super')?STATE.role.user:'Daniel Monge';
+    cargo=(STATE.role&&STATE.role.id==='super')?STATE.role.nombre:'Supervisor de Cobros';
+  }
   const elaborado=(STATE.role&&STATE.role.id==='gestor')?iniciales(STATE.role.user):iniciales(firmante);
   const ref=`${p.cod}.102.${rep.zona}.${rep.cod}.${(parseInt(rep.cod.slice(-4))%90000+10000)}`;
   return frame({titulo,fecha:`${p.ciudad}, ${ctx.fecha}.`,asunto,destinatario,rep,parrafos,
@@ -2012,6 +2022,7 @@ function exportarHist(){
       'Fecha':c.fecha||'',
       'Gestor':c.gestor||'',
       'Estado':c.estado==='aprobada'?'Aprobada':(c.estado==='pendiente'?'Por autorizar':(c.estado||'')),
+      'Autorizó':(c.autorizo&&c.autorizo!=='—')?c.autorizo:'',
       'Entrega':(ENT[c.entrega]||ENT.emitida).lab,
       'Canal':c.canal?CANALES[c.canal]:'',
       'Evidencia':c.evid?'Sí':'No'
@@ -2019,7 +2030,7 @@ function exportarHist(){
   });
   if(!rows.length){toast('info','No hay cartas para exportar en este filtro');return;}
   const ws=XLSX.utils.json_to_sheet(rows);
-  ws['!cols']=[{wch:16},{wch:26},{wch:26},{wch:12},{wch:8},{wch:12},{wch:24},{wch:14},{wch:16},{wch:12},{wch:10}];
+  ws['!cols']=[{wch:16},{wch:26},{wch:26},{wch:12},{wch:8},{wch:12},{wch:24},{wch:14},{wch:22},{wch:16},{wch:12},{wch:10}];
   const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Cartas');
   XLSX.writeFile(wb,`cartera_historial_${new Date().toISOString().slice(0,10)}.xlsx`);
   toast('ok',`Excel exportado · ${rows.length} cartas`);
@@ -2277,7 +2288,7 @@ function showLetter(cod,tipo,num){
         </div>
         <div class="ps-sec"><div class="psl">Emisión</div>
           <div class="ps-row"><span class="k">Ciudad</span><span class="v" style="font-size:10.5px">${p.ciudad}</span></div>
-          <div class="ps-row"><span class="k">Firma</span><span class="v" style="font-size:10.5px">${(STATE.role&&STATE.role.id==='super')?STATE.role.user.split(' ')[0]:'Daniel'}</span></div>
+          <div class="ps-row"><span class="k">Firma</span><span class="v" style="font-size:10.5px">${(()=>{const cc=CARTAS.find(x=>String(x.num)===String(num));return (cc&&cc.estado==='aprobada'&&cc.autorizo&&cc.autorizo!=='—')?cc.autorizo.split(' ')[0]:((STATE.role&&STATE.role.id==='super')?STATE.role.user.split(' ')[0]:'Daniel');})()}</span></div>
         </div>
         <button class="btn primary" style="width:100%;justify-content:center" onclick="descargarPDFUnico('${rep.cod}','${tipo}',${num?`'${num}'`:'null'})">${svg(ICO.down)} Descargar PDF</button>
         <button class="btn ghost" style="width:100%;justify-content:center;margin-top:9px" onclick="closeModal()">Cerrar</button>
