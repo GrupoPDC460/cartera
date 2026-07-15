@@ -1931,7 +1931,7 @@ function viewAuth(){
   if(STATE.role.id==='gestor'){document.getElementById('view').innerHTML=
     `<div class="empty glass" style="padding:70px">${svg(ICO.shield,46)}<h3>Solo supervisión</h3><p>La autorización está reservada a quienes tienen rango de firma.</p></div>`;return;}
   const pend=CARTAS.filter(c=>c.estado==='pendiente').map(x=>{
-    const rep=REPS.find(r=>r.cod===x.cod)||(x.snapshot&&x.snapshot.rep)||{nombre:'(carta de otra base)',balance:0,estatus:'A',inact:1,pais:'GT',cod:x.cod};
+    const rep=(x.snapshot&&x.snapshot.rep)||REPS.find(r=>r.cod===x.cod)||{nombre:'(carta de otra base)',balance:0,estatus:'A',inact:1,pais:'GT',cod:x.cod};
     return Object.assign({},x,{rep,p:PAISES[rep.pais]||PAISES.GT,v:x.tipo==='cobro'?variantePorPD(rep.inact,rep.estatus):{nombre:TIPOS[x.tipo]?TIPOS[x.tipo].nombre:x.tipo}});});
   const tieneFirma=!!STATE.firmas[STATE.role.user];
   document.getElementById('view').innerHTML=`
@@ -1988,6 +1988,12 @@ function tipoLabel(rep,tipo){
   if(tipo==='cobro'){const v=variantePorPD(rep.inact,rep.estatus);return 'Cobro · '+v.nombre.split(' ')[0];}
   return TIPOS[tipo].nombre;
 }
+/* Representante de una carta HISTÓRICA: siempre desde su snapshot (congelado al
+   emitir), no desde la base viva; así el tipo/PD/monto coinciden con lo emitido. */
+function repDeCarta(cod,num){
+  const c=CARTAS.find(x=>String(x.num)===String(num));
+  return (c&&c.snapshot&&c.snapshot.rep)||REPS.find(r=>r.cod===cod)||null;
+}
 function fmtFecha(f){if(!f)return '—';const[y,m,d]=String(f).split('-');return `${d}/${m}/${y}`;}
 let HF={desde:'',hasta:'',gestor:'todos',estado:'todos'};
 function viewHist(){
@@ -2027,7 +2033,7 @@ function viewHist(){
   <div class="tbl-wrap glass"><table>
     <thead><tr><th>N° de carta</th><th>Tipo</th><th>Representante</th><th>Fecha</th>${isSuper?'<th>Gestor</th>':''}<th>Estado de entrega</th><th></th></tr></thead>
     <tbody>${lista.length?lista.map((c,idx)=>{
-      const rep=REPS.find(r=>r.cod===c.cod)||(c.snapshot&&c.snapshot.rep)||{nombre:'(cuenta no encontrada en la base actual)',pais:c.pais||'GT',cod:c.cod};
+      const rep=(c.snapshot&&c.snapshot.rep)||REPS.find(r=>r.cod===c.cod)||{nombre:'(cuenta no encontrada en la base actual)',pais:c.pais||'GT',cod:c.cod};
       const e=ENT[c.entrega]||ENT.emitida;
       const cols=isSuper?7:6;
       // encabezado de sección: autorizadas arriba, no autorizadas abajo
@@ -2048,7 +2054,7 @@ function viewHist(){
   </table></div>`;
 }
 function accionEntrega(c,isSuper){
-  const rep=REPS.find(r=>r.cod===c.cod)||(c.snapshot&&c.snapshot.rep);
+  const rep=(c.snapshot&&c.snapshot.rep)||REPS.find(r=>r.cod===c.cod);
   const ver=`<button class="btn ghost sm" style="padding:6px 11px" onclick="showLetter('${c.cod}','${c.tipo}','${c.num}')">Ver</button>`;
   const pdf=(c.estado==='aprobada'&&rep)?`<button class="btn ghost sm" style="padding:6px 11px;color:var(--teal)" onclick="descargarPDFUnico('${c.cod}','${c.tipo}','${c.num}')">${svg(ICO.down,13)} PDF</button>`:'';
   const evid=c.evid?`<button class="btn ghost sm" style="padding:6px 11px;color:var(--ok)" onclick="toast('info','Evidencia: ${CANALES[c.canal]} · entregada a la representante')">Evidencia</button>`:'';
@@ -2148,7 +2154,7 @@ async function renderCartaAPdf(rep,tipo,num){
   return pdf;
 }
 async function descargarPDFUnico(cod,tipo,num){
-  const rep=REPS.find(r=>r.cod===cod); if(!rep)return;
+  const rep=repDeCarta(cod,num); if(!rep)return;
   toast('info','Generando PDF…');
   try{
     const pdf=await renderCartaAPdf(rep,tipo,num);
@@ -2181,7 +2187,7 @@ async function descargarZip(){
   let generadas=0;
   for(let i=0;i<lista.length;i++){
     const c=lista[i];
-    const rep=REPS.find(r=>r.cod===c.cod)||(c.snapshot&&c.snapshot.rep);
+    const rep=(c.snapshot&&c.snapshot.rep)||REPS.find(r=>r.cod===c.cod);
     if(rep){
       try{
         const pdf=await renderCartaAPdf(rep,c.tipo,c.num);
@@ -2204,7 +2210,7 @@ async function descargarZip(){
 
 /* ============ VISOR DE CARTA ============ */
 function showLetter(cod,tipo,num){
-  const rep=REPS.find(r=>r.cod===cod); if(!rep){toast('info','Carta no disponible');return;}
+  const rep=repDeCarta(cod,num); if(!rep){toast('info','Carta no disponible');return;}
   const p=PAISES[rep.pais], variante=tipo==='cobro'?variantePorPD(rep.inact,rep.estatus):null;
   document.getElementById('modal').innerHTML=`
     <div class="modal-h">${svg(ICO.letter,18)}<div><h3>${TIPOS[tipo].nombre}${variante?' · '+variante.nombre:''}</h3></div>
@@ -2842,7 +2848,7 @@ async function dbCargarCartas(){
     if(error) return false;
     CARTAS.length=0;
     (data||[]).forEach(c=>{
-      CARTAS.push({num:c.num_correlativo,cod:c.rep_codigo,pais:c.pais,tipo:c.tipo,gestor:(c.snapshot&&c.snapshot.gestor)||'—',
+      CARTAS.push({num:c.num_correlativo,cod:c.rep_codigo,pais:c.pais,tipo:c.tipo,variante:c.variante,gestor:(c.snapshot&&c.snapshot.gestor)||'—',
         fecha:String(c.fecha_emision||c.creada_en||'').slice(0,10),autorizo:(c.snapshot&&c.snapshot.autorizo)||'—',
         entrega:c.entrega_estado||'emitida',canal:c.canal,evid:!!c.evidencia_path,estado:c.estado,
         emitidaPor:(c.snapshot&&c.snapshot.emitidaPor)||null,dbId:c.id,snapshot:c.snapshot});
