@@ -1132,7 +1132,121 @@ function viewAyuda(){
 /* ============ INSTRUCCIONES DE USO (fin) ============ */
 
 /* ============ DASHBOARD ============ */
+/* ============ DASHBOARD SUPERVISIÓN · 6 gráficas + filtros ============ */
+let DF={pais:'todos',gestor:'todos'};
+function pdDeCarta(c){
+  const r=c.snapshot&&c.snapshot.rep;
+  if(r&&(typeof r.inact==='number'||(r.inact!=null&&!isNaN(+r.inact)))) return +r.inact;
+  return ({recordatorio:2,requerimiento:4,escalamiento:6,prejuridica:7})[c.variante]||null;
+}
+function lunesDe(f){ if(!f)return null; const d=new Date(f+'T00:00:00'); if(isNaN(d))return null; const off=(d.getDay()+6)%7; d.setDate(d.getDate()-off); return d.toISOString().slice(0,10); }
+function cartasDF(){
+  return CARTAS.filter(c=>
+    (DF.pais==='todos'||c.pais===DF.pais) &&
+    (DF.gestor==='todos'||(c.gestor||'').trim()===DF.gestor));
+}
+function viewDashSuper(){
+  const F=cartasDF();
+  const total=F.length;
+  const aprob=F.filter(c=>c.estado==='aprobada').length;
+  const enviadas=F.filter(c=>['enviada_gerente','entregada','respondida'].includes(c.entrega)).length;
+  const entreg=F.filter(c=>['entregada','respondida'].includes(c.entrega)).length;
+  const resp=F.filter(c=>c.entrega==='respondida').length;
+  const preju=F.filter(c=>pdDeCarta(c)===7).length;
+  const pct=(n,d)=>d?Math.round(n/d*100):0;
+
+  // 1) Embudo de entrega (acumulado)
+  const funnel=[['Emitidas',total,'var(--teal)'],['Enviadas a gerente',enviadas,'var(--sky)'],['Entregadas',entreg,'var(--ok)'],['Con respuesta',resp,'var(--warn)']];
+  const fMax=Math.max(1,total);
+
+  // 2) Por tramo PD1–PD7
+  const pd=[0,0,0,0,0,0,0]; F.forEach(c=>{const n=pdDeCarta(c); if(n>=1&&n<=7)pd[n-1]++;});
+  const pdMax=Math.max(1,...pd);
+  const pdCol=i=>i<3?'var(--ok)':(i<6?'var(--warn)':'var(--bad)');
+
+  // 3) Productividad por gestor
+  const gEmit={},gEnt={}; F.forEach(c=>{const g=(c.gestor||'—');gEmit[g]=(gEmit[g]||0)+1; if(['entregada','respondida'].includes(c.entrega))gEnt[g]=(gEnt[g]||0)+1;});
+  const gestData=Object.keys(gEmit).map(g=>({g,emit:gEmit[g],ent:gEnt[g]||0})).sort((a,b)=>b.emit-a.emit).slice(0,10);
+  const gMax=Math.max(1,...gestData.map(d=>d.emit));
+
+  // 4) Cobertura por país
+  const porPais={}; F.forEach(c=>{if(c.pais)porPais[c.pais]=(porPais[c.pais]||0)+1;});
+  const paisData=Object.entries(porPais).sort((a,b)=>b[1]-a[1]); const pMax=Math.max(1,...paisData.map(([,v])=>v));
+
+  // 5) Evolución por semana (últimas 8)
+  const sem={}; F.forEach(c=>{const k=lunesDe(c.fecha); if(k)sem[k]=(sem[k]||0)+1;});
+  const semKeys=Object.keys(sem).sort().slice(-8);
+  const semVals=semKeys.map(k=>sem[k]); const sMax=Math.max(1,...semVals);
+  const W=560,H=150,pad=26;
+  const pts=semKeys.map((k,i)=>{const x=pad+(semKeys.length>1?i/(semKeys.length-1):0.5)*(W-2*pad);const y=H-pad-(semVals[i]/sMax)*(H-2*pad);return [x,y];});
+  const linePath=pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');
+  const areaPath=pts.length?`${linePath} L${pts[pts.length-1][0].toFixed(1)} ${H-pad} L${pts[0][0].toFixed(1)} ${H-pad} Z`:'';
+
+  const kpi=(lab,val,meta,ic,col)=>`<div class="kpi glass"><div class="lab"><div class="ic" style="color:${col}">${svg(ic,15)}</div>${lab}</div>
+    <div class="val">${val}</div><div class="meta">${meta}</div></div>`;
+  const paisOpts=['todos',...Object.keys(PAISES)].map(k=>`<option value="${k}" ${DF.pais===k?'selected':''}>${k==='todos'?'Todos los países':(PAISES[k]?PAISES[k].nombre:k)}</option>`).join('');
+  const gestOpts=['todos',...GESTORES.map(g=>g.nombre)].map(n=>`<option value="${n}" ${DF.gestor===n?'selected':''}>${n==='todos'?'Todos los gestores':n.split(' ').slice(0,3).join(' ')}</option>`).join('');
+
+  document.getElementById('view').innerHTML=`
+  <div class="toolbar">
+    <div class="field"><label>País</label><select class="select" onchange="DF.pais=this.value;viewDashSuper()">${paisOpts}</select></div>
+    <div class="field"><label>Gestor</label><select class="select" style="min-width:200px" onchange="DF.gestor=this.value;viewDashSuper()">${gestOpts}</select></div>
+    ${(DF.pais!=='todos'||DF.gestor!=='todos')?`<div class="field"><label>&nbsp;</label><button class="btn ghost" onclick="DF={pais:'todos',gestor:'todos'};viewDashSuper()">Ver todo</button></div>`:''}
+    <div style="flex:1"></div>
+    <div class="field"><label>&nbsp;</label><span class="pill ok">${total} cartas en vista</span></div>
+  </div>
+
+  <div class="kpis">
+    ${kpi('Emitidas',total,'total en vista',ICO.doc,'var(--teal)')}
+    ${kpi('Autorizadas',`${pct(aprob,total)}<span style="font-size:16px">%</span>`,`${aprob} firmadas`,ICO.check,'var(--sky)')}
+    ${kpi('Entregadas',`${pct(entreg,total)}<span style="font-size:16px">%</span>`,`${entreg} a la representante`,ICO.send,'var(--ok)')}
+    ${kpi('Tasa de respuesta',`${pct(resp,entreg)}<span style="font-size:16px">%</span>`,`${resp} respondidas`,ICO.bolt,'var(--warn)')}
+    ${kpi('Prejurídicas',preju,'PD7 activas',ICO.auth,'var(--bad)')}
+  </div>
+
+  <div class="grid-2">
+    <div class="panel glass"><div class="panel-h"><h3>Embudo de entrega</h3><span class="hint">del emitido al respondido</span></div>
+      ${total?funnel.map(([n,v,c])=>`<div class="type-row"><span class="tn" style="flex:0 0 140px">${n}</span>
+        <div class="tmeter" style="flex:1"><i style="width:${(v/fMax)*100}%;background:${c}"></i></div>
+        <span class="tv" style="width:auto">${v} <span style="color:var(--txt-3);font-size:11px">· ${pct(v,total)}%</span></span></div>`).join('')
+      :`<div style="text-align:center;padding:40px;color:var(--txt-3);font-size:13px">Sin cartas en esta vista.</div>`}
+    </div>
+    <div class="panel glass"><div class="panel-h"><h3>Por tramo de mora</h3><span class="hint">PD1 → PD7</span></div>
+      ${total?`<div class="bars">${pd.map((v,i)=>`<div class="bar-col"><span class="bar-val">${v}</span>
+        <div class="bar-track"><div class="bar" style="height:${(v/pdMax)*100}%;background:${pdCol(i)}"></div></div><span class="bar-lab">PD${i+1}</span></div>`).join('')}</div>`
+      :`<div style="text-align:center;padding:40px;color:var(--txt-3);font-size:13px">Sin datos.</div>`}
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="panel glass"><div class="panel-h"><h3>Productividad por gestor</h3><span class="hint">emitidas · entregadas</span></div>
+      ${gestData.length?gestData.map(d=>`<div class="type-row"><span class="tn" style="flex:0 0 150px">${d.g.split(' ').slice(0,2).join(' ')}</span>
+        <div class="tmeter" style="flex:1"><i style="width:${(d.emit/gMax)*100}%"></i></div>
+        <span class="tv" style="width:auto">${d.emit} <span style="color:var(--ok);font-size:11px">· ${d.ent} ent.</span></span></div>`).join('')
+      :`<div style="text-align:center;padding:40px;color:var(--txt-3);font-size:13px">Sin cartas por gestor en esta vista.</div>`}
+    </div>
+    <div class="panel glass"><div class="panel-h"><h3>Cobertura por país</h3><span class="hint">volumen de cartas</span></div>
+      ${paisData.length?`<div class="bars">${paisData.map(([iso,v])=>`<div class="bar-col"><span class="bar-val">${v}</span>
+        <div class="bar-track"><div class="bar b1" style="height:${(v/pMax)*100}%"></div></div><span class="bar-lab">${iso}</span></div>`).join('')}</div>`
+      :`<div style="text-align:center;padding:40px;color:var(--txt-3);font-size:13px">Sin datos por país.</div>`}
+    </div>
+  </div>
+
+  <div class="panel glass"><div class="panel-h"><h3>Evolución semanal</h3><span class="hint">cartas emitidas por semana (últimas 8)</span></div>
+    ${semKeys.length?`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;overflow:visible">
+      <defs><linearGradient id="semG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--teal)" stop-opacity=".35"/><stop offset="1" stop-color="var(--teal)" stop-opacity="0"/></linearGradient></defs>
+      <path d="${areaPath}" fill="url(#semG)"/>
+      <path d="${linePath}" fill="none" stroke="var(--teal)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      ${pts.map((p,i)=>`<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="3.5" fill="var(--teal)"/>
+        <text x="${p[0].toFixed(1)}" y="${(p[1]-9).toFixed(1)}" text-anchor="middle" font-size="11" fill="var(--txt-2)">${semVals[i]}</text>
+        <text x="${p[0].toFixed(1)}" y="${H-8}" text-anchor="middle" font-size="9.5" fill="var(--txt-3)">${semKeys[i].slice(5)}</text>`).join('')}
+    </svg>`
+    :`<div style="text-align:center;padding:40px;color:var(--txt-3);font-size:13px">Aún no hay cartas con fecha para graficar la tendencia.</div>`}
+  </div>
+  ${transitoPanel()}`;
+}
 function viewDash(){
+  if(STATE.role.id==='super') return viewDashSuper();
   const isG=STATE.role.id==='gestor';
   const misCartas=isG?CARTAS.filter(c=>(c.gestor||'').trim()===(STATE.role.user||'').trim()):CARTAS;
   const total=misCartas.length;
