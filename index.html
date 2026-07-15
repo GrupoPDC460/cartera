@@ -1043,7 +1043,6 @@ function buildNav(){
     {id:'perfil',ic:ICO.dash,t:'Mi panel'},
     {id:'recop',ic:ICO.down,t:'Recopilación'},
     ...(STATE.delegado===STATE.role.user?[{id:'upload',ic:ICO.upload,t:'Cargar base',badge:'★'}]:[]),
-    {id:'gen',ic:ICO.gen,t:'Generar cartas'},
     {id:'hist',ic:ICO.hist,t:'Mis cartas'},
     {id:'ayuda',ic:ICO.bolt,t:'Instrucciones'},
   ];
@@ -1064,6 +1063,7 @@ const TITLES={dash:['Panel','Resumen general de la operación'],
   plantillas:['Plantillas de cartas','Edita el texto · los campos del Excel no cambian'],
   ayuda:['Instrucciones de uso','Cómo usar el sistema y cómo solicitar las cartas']};
 function go(v){
+  if(v==='gen'&&STATE.role&&STATE.role.id!=='super') v='hist';   // gestores no generan (evita el bucle de reautorización)
   STATE.view=v; STATE.sel.clear();
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.toggle('active',n.dataset.v===v));
   document.getElementById('vTitle').textContent=TITLES[v][0];
