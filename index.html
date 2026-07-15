@@ -85,9 +85,9 @@ body{
 .gate-stage{position:relative;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:32px;width:min(1000px,92vw)}
 .gate-veil{position:absolute;inset:0;background:#05040a;opacity:.93;z-index:1;pointer-events:none;transition:opacity 1.1s ease}
 #gate.lit .gate-veil{opacity:0}
-.gate-halo{position:absolute;z-index:1;width:1100px;height:900px;left:26%;top:-12%;transform:translateX(-50%);
+.gate-halo{position:absolute;z-index:1;width:760px;height:680px;left:25%;top:-4%;transform:translateX(-50%);
   pointer-events:none;opacity:0;transition:opacity 1.15s ease;
-  background:radial-gradient(closest-side,rgba(255,197,110,.5),rgba(255,180,80,.12) 44%,transparent 70%)}
+  background:radial-gradient(closest-side,rgba(255,197,110,.5),rgba(255,180,80,.1) 46%,transparent 68%)}
 #gate.lit .gate-halo{opacity:1}
 .gate-lamp{flex:0 0 auto;position:relative;z-index:2;user-select:none;display:flex}
 .gate-lamp svg{overflow:visible;display:block}
@@ -514,8 +514,9 @@ tbody tr.blocked{opacity:.62}
           <linearGradient id="gCone" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFD98A" stop-opacity=".55"/><stop offset="1" stop-color="#FFB300" stop-opacity="0"/></linearGradient>
           <linearGradient id="gShade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f4f6fb"/><stop offset="1" stop-color="#c8cede"/></linearGradient>
           <linearGradient id="gShadeLit" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff4dc"/><stop offset="1" stop-color="#ffcf87"/></linearGradient>
+          <filter id="gBlur" x="-60%" y="-30%" width="220%" height="200%"><feGaussianBlur stdDeviation="7"/></filter>
         </defs>
-        <path class="g-cone" d="M56 96 L144 96 L182 250 L18 250 Z" fill="url(#gCone)"/>
+        <path class="g-cone" d="M66 110 L134 110 L178 306 L22 306 Z" fill="url(#gCone)" filter="url(#gBlur)"/>
         <ellipse cx="100" cy="300" rx="52" ry="12" fill="#2a2e40"/>
         <rect x="94" y="112" width="12" height="182" rx="6" fill="#41465c"/>
         <path d="M58 100 Q100 40 142 100 Q146 108 138 108 L62 108 Q54 108 58 100 Z" fill="url(#gShade)"/>
@@ -523,10 +524,10 @@ tbody tr.blocked{opacity:.62}
         <ellipse cx="100" cy="108" rx="42" ry="7" fill="#b7bccb"/>
         <circle class="g-bulb" cx="100" cy="116" r="7"/>
         <g class="gate-cord" id="gateCord">
-          <circle cx="150" cy="108" r="16" fill="transparent"/>
-          <line class="g-line" id="gateCordLine" x1="150" y1="104" x2="150" y2="150"/>
-          <circle class="g-knob" id="gateCordKnob" cx="150" cy="156" r="6.5"/>
-          <text class="g-hint" x="150" y="184" text-anchor="middle" fill="#c9ccdd" font-size="10">jala ↓</text>
+          <circle cx="118" cy="124" r="17" fill="transparent"/>
+          <line class="g-line" id="gateCordLine" x1="118" y1="112" x2="118" y2="148"/>
+          <circle class="g-knob" id="gateCordKnob" cx="118" cy="154" r="6"/>
+          <text class="g-hint" x="118" y="178" text-anchor="middle" fill="#c9ccdd" font-size="10">jala ↓</text>
         </g>
       </svg>
     </div>
@@ -697,7 +698,7 @@ function initGateLamp(){
   const knob=document.getElementById('gateCordKnob');
   if(!gate||!cord||!line||!knob) return;
   if(matchMedia('(prefers-reduced-motion: reduce)').matches){ gate.classList.add('lit'); } // accesible: sin gesto
-  let dragging=false,startY=0,dy=0; const L=150,K=156;
+  let dragging=false,startY=0,dy=0; const L=148,K=154;
   const down=e=>{dragging=true;startY=(e.touches?e.touches[0].clientY:e.clientY);e.preventDefault();};
   const move=e=>{ if(!dragging)return; const y=(e.touches?e.touches[0].clientY:e.clientY);
     dy=Math.max(0,Math.min(46,y-startY)); line.setAttribute('y2',L+dy); knob.setAttribute('cy',K+dy); };
