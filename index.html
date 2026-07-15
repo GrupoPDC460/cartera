@@ -347,6 +347,9 @@ body{
 .select,.input{padding:9px 13px;border-radius:10px;background:rgba(255,255,255,.04);border:1px solid var(--stroke);
   color:var(--txt);font-size:13px;font-family:'Inter';outline:none;cursor:pointer;min-width:160px}
 .select:focus,.input:focus{border-color:var(--stroke-bright)}
+/* Lista desplegable legible en toda la app (el navegador la dibujaba en blanco) */
+.select,select{color-scheme:dark}
+.select option,select option,optgroup{background-color:#191324;color:#EAF0FF}
 .btn{padding:10px 18px;border-radius:11px;border:1px solid var(--stroke);background:var(--glass-2);color:var(--txt);
   font-size:13px;font-weight:600;font-family:'Inter';cursor:pointer;display:inline-flex;align-items:center;gap:8px;transition:.2s}
 .btn svg{width:16px;height:16px}
