@@ -1647,7 +1647,13 @@ function normalizarTipoSolicitado(txt){
   const t=String(txt).trim().toUpperCase();
   if(!t) return {id:null,texto:null};
   if(TIPO_TEXTO_A_ID[t]) return {id:TIPO_TEXTO_A_ID[t],texto:t};
-  if(TIPOS_NO_SOPORTADOS.includes(t)) return {id:'no_soportado',texto:t};
+  if(TIPOS_NO_SOPORTADOS.some(x=>t.includes(x))) return {id:'no_soportado',texto:t};
+  // Heurística tolerante: acepta plurales y variantes de escritura (COBROS, CARTA DE COBRO, COBRANZA, FINIQUITOS, SALDOS, AL DÍA...)
+  const tn=t.replace(/[ÁÀÄ]/g,'A').replace(/[ÉÈ]/g,'E').replace(/[ÍÌ]/g,'I').replace(/[ÓÒ]/g,'O').replace(/[ÚÜÙ]/g,'U');
+  if(/COBRO|COBRANZA/.test(tn)) return {id:'cobro',texto:t};
+  if(/FINIQUITO/.test(tn)) return {id:'finiquito',texto:t};
+  if(/AL\s*DIA|ALDIA|CUENTA\s*AL\s*DIA/.test(tn)) return {id:'aldia',texto:t};
+  if(/SALDO/.test(tn)) return {id:'saldo',texto:t};
   return {id:'desconocido',texto:t};
 }
 const HEADER_MAP={
