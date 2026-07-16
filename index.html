@@ -2753,9 +2753,9 @@ function viewPerfil(){
     document.getElementById('view').innerHTML=cortesBanner()+head+`
     <div class="kpis">
       ${kpi('Cartas emitidas',m.emit,'en total',ICO.doc,'var(--teal)')}
-      ${kpi('Por firmar',m.porFirmar,'esperan al supervisor',ICO.auth,'var(--warn)')}
-      ${kpi('Autorizadas',m.aprobadas,'total firmadas',ICO.check,'var(--sky)')}
-      ${kpi('Entregadas',m.entreg,'con evidencia',ICO.send,'var(--ok)')}
+      ${kpi('Autorizadas',m.aprobadas,'firmadas por supervisión',ICO.check,'var(--sky)')}
+      ${kpi('Enviadas a gerente',m.gerente,`faltan por enviar: ${Math.max(0,m.aprobadas-m.gerente)}`,ICO.send,'#818cf8')}
+      ${kpi('Entregadas a rep.',m.entreg,`en tránsito con gerente: ${Math.max(0,m.gerente-m.entreg)}`,ICO.check,'var(--ok)')}
     </div>
     <div class="grid-2">
       <div class="panel glass"><div class="panel-h"><h3>Etapa de mis cartas</h3><span class="hint">Recorrido completo</span></div>
