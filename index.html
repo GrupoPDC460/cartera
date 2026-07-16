@@ -2226,14 +2226,17 @@ async function verEvidencia(num){
     if(error||!data) throw error||new Error('sin datos');
     const url=URL.createObjectURL(data);
     const esImg=/\.(png|jpe?g|webp|gif)$/i.test(c.evidPath);
+    const soyDueno=STATE.role&&(STATE.role.id==='super'||(c.gestor||'').trim()===(STATE.role.user||'').trim());
     document.getElementById('modal').innerHTML=`
       <div class="modal-h">${svg(ICO.check,18)}<div><h3>Evidencia de entrega · ${num}</h3>
         <p style="font-size:11.5px;color:var(--txt-3);margin-top:2px">${c.canal?CANALES[c.canal]+' · ':''}entregada a la representante</p></div>
         <div class="x" onclick="closeModal()">${svg(ICO.x,16)}</div></div>
       <div class="modal-body" style="text-align:center;padding:20px">
         ${esImg
-          ? `<img src="${url}" style="max-width:100%;max-height:66vh;border-radius:10px;border:1px solid rgba(255,255,255,.1)">`
+          ? `<img src="${url}" style="max-width:100%;max-height:60vh;border-radius:10px;border:1px solid rgba(255,255,255,.1)">`
           : `<p style="color:var(--txt-2);margin-bottom:14px">Archivo adjunto: ${c.evidPath}</p><a class="btn primary" href="${url}" download="${c.evidPath}">${svg(ICO.down)} Descargar archivo</a>`}
+        ${c.respNota?`<div style="text-align:left;margin-top:16px;padding:13px;border-radius:11px;background:rgba(45,212,191,.07);border:1px solid rgba(45,212,191,.18);font-size:12.5px;color:var(--txt-2);line-height:1.55"><b style="color:var(--teal)">Respuesta:</b> ${c.respNota}</div>`:''}
+        ${soyDueno?`<button class="btn ghost sm" style="margin-top:16px" onclick="reemplazarEvidencia('${num}')">${svg(ICO.upload,13)} Reemplazar evidencia</button>`:''}
       </div>`;
     document.getElementById('overlay').classList.add('show');
   }catch(e){toast('info','No se pudo cargar la evidencia · '+(e&&e.message?e.message:''));}
@@ -2243,7 +2246,8 @@ function accionEntrega(c,isSuper){
   const ver=`<button class="btn ghost sm" style="padding:6px 11px" onclick="showLetter('${c.cod}','${c.tipo}','${c.num}')">Ver</button>`;
   const pdf=(c.estado==='aprobada'&&rep)?`<button class="btn ghost sm" style="padding:6px 11px;color:var(--teal)" onclick="descargarPDFUnico('${c.cod}','${c.tipo}','${c.num}')">${svg(ICO.down,13)} PDF</button>`:'';
   const evid=c.evid?`<button class="btn ghost sm" style="padding:6px 11px;color:var(--ok)" onclick="verEvidencia('${c.num}')">${svg(ICO.check,13)} Evidencia</button>`:'';
-  if(isSuper) return `<div style="display:flex;gap:6px;justify-content:flex-end">${evid}${pdf}${ver}</div>`;
+  const verResp=(c.entrega==='respondida'&&c.respNota)?`<button class="btn ghost sm" style="padding:6px 11px;color:var(--teal)" onclick="verRespuesta('${c.num}')">${svg(ICO.doc,13)} Respuesta</button>`:'';
+  if(isSuper) return `<div style="display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap">${verResp}${evid}${pdf}${ver}</div>`;
   // gestor: no puede avanzar la carta hasta que un supervisor la apruebe/firme
   let acc='';
   if(c.estado==='pendiente'){
@@ -2252,14 +2256,66 @@ function accionEntrega(c,isSuper){
     acc=`<span style="font-size:11.5px;color:var(--bad)">Rechazada por supervisión</span>`;
   } else if(c.entrega==='emitida') acc=`<button class="btn ghost sm" style="padding:6px 11px;color:var(--warn)" onclick="avanzaEntrega('${c.num}','enviada_gerente')">${svg(ICO.send,13)} Enviar a gerente</button>`;
   else if(c.entrega==='enviada_gerente') acc=`<button class="btn primary sm" style="padding:6px 11px" onclick="modalEntrega('${c.num}')">${svg(ICO.upload,13)} Registrar entrega</button>`;
-  else if(c.entrega==='entregada') acc=`<button class="btn sm ok" style="padding:6px 11px;flex:0" onclick="avanzaEntrega('${c.num}','respondida')">${svg(ICO.check,13)} Con respuesta</button>`;
-  return `<div style="display:flex;gap:6px;justify-content:flex-end;align-items:center">${evid}${pdf}${acc}${ver}</div>`;
+  else if(c.entrega==='entregada') acc=`<button class="btn sm ok" style="padding:6px 11px;flex:0" onclick="modalRespuesta('${c.num}')">${svg(ICO.check,13)} Con respuesta</button>`;
+  return `<div style="display:flex;gap:6px;justify-content:flex-end;align-items:center;flex-wrap:wrap">${verResp}${evid}${pdf}${acc}${ver}</div>`;
 }
 async function avanzaEntrega(num,nuevo){
   const c=CARTAS.find(x=>x.num===num); c.entrega=nuevo;
   await dbEntrega(num,nuevo,null,null);
   toast('ok', nuevo==='enviada_gerente'?'Marcada como enviada a la gerente de zona':'Marcada con respuesta de la representante');
   viewHist();
+}
+const RESP_TIPOS={pago:'Pagó / abonó',convenio:'Convenio de pago',negativa:'Se negó a pagar',nocontacto:'No se pudo contactar',otro:'Otro'};
+let respTmp={num:null,tipo:'pago'};
+function modalRespuesta(num){
+  respTmp={num,tipo:'pago'};
+  document.getElementById('modal').innerHTML=`
+    <div class="modal-h">${svg(ICO.check,18)}<div><h3>Respuesta de la representante · ${num}</h3></div>
+      <div class="x" onclick="closeModal()">${svg(ICO.x,16)}</div></div>
+    <div class="modal-body" style="display:block;max-width:480px">
+      <p style="font-size:13px;color:var(--txt-2);line-height:1.6;margin-bottom:16px">Registra qué respondió la representante tras recibir la carta.</p>
+      <div class="field" style="margin-bottom:14px"><label>Tipo de respuesta</label>
+        <select class="select" style="width:100%;min-width:0" onchange="respTmp.tipo=this.value">
+          ${Object.entries(RESP_TIPOS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></div>
+      <div class="field" style="margin-bottom:8px"><label>Comentario</label>
+        <textarea id="respNota" class="input" style="width:100%;min-height:96px;resize:vertical;font-family:inherit" placeholder="Ej. Indicó que abonará Q300 el 30 de este mes; pide llamada el lunes…"></textarea></div>
+      <div style="display:flex;gap:10px;margin-top:18px">
+        <button class="btn ghost" style="flex:1;justify-content:center" onclick="closeModal()">Cancelar</button>
+        <button class="btn primary" style="flex:1;justify-content:center" onclick="confirmRespuesta()">${svg(ICO.check)} Guardar respuesta</button>
+      </div>
+    </div>`;
+  document.getElementById('overlay').classList.add('show');
+}
+async function confirmRespuesta(){
+  const txt=(document.getElementById('respNota').value||'').trim();
+  const nota=RESP_TIPOS[respTmp.tipo]+(txt?' · '+txt:'');
+  const c=CARTAS.find(x=>x.num===respTmp.num);
+  if(c){c.entrega='respondida';c.respNota=nota;}
+  await dbEntrega(respTmp.num,'respondida',null,null,nota);
+  closeModal(); toast('ok','Respuesta registrada'); viewHist();
+}
+function verRespuesta(num){
+  const c=CARTAS.find(x=>String(x.num)===String(num)); if(!c||!c.respNota){toast('info','Sin comentario de respuesta');return;}
+  document.getElementById('modal').innerHTML=`
+    <div class="modal-h">${svg(ICO.doc,18)}<div><h3>Respuesta registrada · ${num}</h3></div>
+      <div class="x" onclick="closeModal()">${svg(ICO.x,16)}</div></div>
+    <div class="modal-body" style="display:block;max-width:460px;padding:20px">
+      <div style="padding:16px;border-radius:12px;background:rgba(45,212,191,.07);border:1px solid rgba(45,212,191,.18);font-size:13.5px;color:var(--txt);line-height:1.6;white-space:pre-wrap">${c.respNota}</div>
+    </div>`;
+  document.getElementById('overlay').classList.add('show');
+}
+function reemplazarEvidencia(num){
+  const inp=document.createElement('input'); inp.type='file'; inp.accept='image/*,.pdf';
+  inp.onchange=async e=>{
+    const f=e.target.files[0]; if(!f)return;
+    toast('info','Subiendo nueva evidencia…');
+    const c=CARTAS.find(x=>String(x.num)===String(num));
+    const path=SB_OK?await dbSubirEvidencia(num,f):null;
+    await dbEntrega(num,(c&&c.entrega)||'entregada',(c&&c.canal)||null,path||('local_'+Date.now()));
+    if(c&&path){c.evidPath=path;c.evid=true;}
+    closeModal(); toast('ok','Evidencia reemplazada'); viewHist();
+  };
+  inp.click();
 }
 /* modal de entrega: evidencia OBLIGATORIA + canal */
 let entregaTmp={num:null,canal:'whatsapp',file:false};
@@ -2691,7 +2747,7 @@ function viewPerfil(){
     <div class="kpis">
       ${kpi('Cartas emitidas',m.emit,'en total',ICO.doc,'var(--teal)')}
       ${kpi('Por firmar',m.porFirmar,'esperan al supervisor',ICO.auth,'var(--warn)')}
-      ${kpi('Aprobadas',m.aprobadas,'listas para enviar',ICO.check,'var(--sky)')}
+      ${kpi('Autorizadas',m.aprobadas,'total firmadas',ICO.check,'var(--sky)')}
       ${kpi('Entregadas',m.entreg,'con evidencia',ICO.send,'var(--ok)')}
     </div>
     <div class="grid-2">
@@ -3035,7 +3091,7 @@ async function dbCargarCartas(){
     (data||[]).forEach(c=>{
       CARTAS.push({num:c.num_correlativo,cod:c.rep_codigo,pais:c.pais,tipo:c.tipo,variante:c.variante,gestor:(c.snapshot&&c.snapshot.gestor)||'—',
         fecha:String(c.fecha_emision||c.creada_en||'').slice(0,10),autorizo:(c.snapshot&&c.snapshot.autorizo)||'—',
-        entrega:c.entrega_estado||'emitida',canal:c.canal,evid:!!c.evidencia_path,evidPath:c.evidencia_path||null,estado:c.estado,
+        entrega:c.entrega_estado||'emitida',canal:c.canal,evid:!!c.evidencia_path,evidPath:c.evidencia_path||null,respNota:c.respuesta_nota||null,estado:c.estado,
         emitidaPor:(c.snapshot&&c.snapshot.emitidaPor)||null,dbId:c.id,snapshot:c.snapshot});
       if(c.snapshot&&c.snapshot.rep&&!REPS.find(r=>r.cod===c.rep_codigo&&r.pais===c.snapshot.rep.pais)){
         REPS.push(c.snapshot.rep);
@@ -3070,10 +3126,10 @@ async function dbAprobar(num,quien){
     return !error;
   }catch(e){return false;}
 }
-async function dbEntrega(num,estado,canal,evidPath){
+async function dbEntrega(num,estado,canal,evidPath,nota){
   if(!SB_OK||!sb) return false;
   try{
-    const upd={entrega_estado:estado}; if(canal)upd.canal=canal; if(evidPath)upd.evidencia_path=evidPath;
+    const upd={entrega_estado:estado}; if(canal)upd.canal=canal; if(evidPath)upd.evidencia_path=evidPath; if(nota!=null)upd.respuesta_nota=nota;
     const {error}=await sb.from('cartera_cartas').update(upd).eq('num_correlativo',num);
     return !error;
   }catch(e){return false;}
