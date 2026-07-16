@@ -2123,6 +2123,13 @@ function tipoLabel(rep,tipo){
   if(tipo==='cobro'){const v=variantePorPD(rep.inact,rep.estatus);return 'Cobro · '+v.nombre.split(' ')[0];}
   return TIPOS[tipo].nombre;
 }
+/* chip del tramo de mora (estatus·PD) para mostrar en el historial */
+function pdChipHTML(rep){
+  if(!rep||rep.inact==null||rep.inact==='') return '';
+  const pd=+rep.inact||0; const est=rep.estatus||'C';
+  const cls=pd>=7?'pd-7':(est==='A'?'pd-A':'pd-C');
+  return `<span class="pd-chip ${cls}" style="margin-left:8px">${est}·PD${pd}</span>`;
+}
 /* Representante de una carta HISTÓRICA: siempre desde su snapshot (congelado al
    emitir), no desde la base viva; así el tipo/PD/monto coinciden con lo emitido. */
 function repDeCarta(cod,num){
@@ -2207,7 +2214,7 @@ function viewHist(){
       }
       return sep+`<tr>
       <td><span style="font-family:'JetBrains Mono';font-size:12px;color:var(--txt-2)">${c.num}</span></td>
-      <td style="font-weight:500">${tipoLabel(rep,c.tipo)}</td>
+      <td style="font-weight:500">${tipoLabel(rep,c.tipo)}${c.tipo==='cobro'?pdChipHTML(rep):''}</td>
       <td>${rep.nombre.split(' ').slice(0,3).join(' ')} <span class="fc" style="font-family:'JetBrains Mono';font-size:10px;padding:1px 5px;border-radius:4px;background:rgba(255,255,255,.06);margin-left:4px">${rep.pais}</span></td>
       <td><span style="font-family:'JetBrains Mono';font-size:12px;color:var(--txt-3)">${fmtFecha(c.fecha)}</span></td>
       ${isSuper?`<td><span style="font-size:12px;color:var(--txt-2)">${(c.gestor||'—').split(' ')[0]} ${(c.gestor||'').split(' ')[2]?(c.gestor||'').split(' ')[2][0]+'.':''}</span>${(c.emitidaPor&&c.emitidaPor!==c.gestor)?`<div style="font-size:10px;color:var(--txt-3);margin-top:2px">emitió: ${c.emitidaPor.split(' ')[0]}</div>`:''}</td>`:''}
