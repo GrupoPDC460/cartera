@@ -2717,6 +2717,26 @@ async function subirRecop(e){
 }
 
 /* ============ PERFIL ============ */
+function barraReparto(m){
+  const sinEnviar=Math.max(0,m.aprobadas-m.gerente);
+  const enTransito=Math.max(0,m.gerente-m.entreg);
+  const entSinResp=Math.max(0,m.entreg-m.resp);
+  const conResp=m.resp; const tot=m.aprobadas;
+  const seg=(v,c)=> v>0?`<div style="flex:${v};background:${c}" title="${v}"></div>`:'';
+  const leg=(c,l,v)=>`<span style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--txt-2)"><i style="width:10px;height:10px;border-radius:3px;background:${c};display:inline-block"></i>${l}: <b style="color:var(--txt)">${v}</b></span>`;
+  return `<div class="panel glass" style="margin-top:14px">
+    <div class="panel-h"><h3>Reparto de mis cartas autorizadas</h3><span class="hint">${tot} en total</span></div>
+    ${tot>0?`<div style="display:flex;height:18px;border-radius:9px;overflow:hidden;background:rgba(255,255,255,.05);margin:4px 0 16px">
+      ${seg(sinEnviar,'var(--warn)')}${seg(enTransito,'#818cf8')}${seg(entSinResp,'var(--ok)')}${seg(conResp,'var(--teal)')}</div>
+    <div style="display:flex;gap:20px;flex-wrap:wrap">
+      ${leg('var(--warn)','Sin enviar (contigo)',sinEnviar)}
+      ${leg('#818cf8','En tránsito (con la gerente)',enTransito)}
+      ${leg('var(--ok)','Entregada, sin respuesta',entSinResp)}
+      ${leg('var(--teal)','Con respuesta',conResp)}</div>
+    <div style="margin-top:12px;font-size:11.5px;color:var(--txt-3)">${sinEnviar} + ${enTransito} + ${entSinResp} + ${conResp} = ${tot} autorizadas</div>`
+    :`<div style="text-align:center;padding:26px;color:var(--txt-3);font-size:13px">Aún no tienes cartas autorizadas.</div>`}
+  </div>`;
+}
 function metricasGestor(nombre){
   const cs=CARTAS.filter(c=>(c.gestor||'').trim()===(nombre||'').trim());
   return {emit:cs.length,
@@ -2757,6 +2777,7 @@ function viewPerfil(){
       ${kpi('Enviadas a gerente',m.gerente,`faltan por enviar: ${Math.max(0,m.aprobadas-m.gerente)}`,ICO.send,'#818cf8')}
       ${kpi('Entregadas a rep.',m.entreg,`en tránsito con gerente: ${Math.max(0,m.gerente-m.entreg)}`,ICO.check,'var(--ok)')}
     </div>
+    ${barraReparto(m)}
     <div class="grid-2">
       <div class="panel glass"><div class="panel-h"><h3>Etapa de mis cartas</h3><span class="hint">Recorrido completo</span></div>
         ${[['1 · Emitidas',m.emit,'var(--txt-2)'],['2 · Por firmar (supervisor)',m.porFirmar,'var(--warn)'],['3 · Aprobadas / firmadas',m.aprobadas,'var(--sky)'],['4 · Enviadas a la gerente',m.gerente,'#818cf8'],['5 · Entregadas a la representante',m.entreg,'var(--ok)'],['6 · Con respuesta',m.resp,'var(--teal)']]
