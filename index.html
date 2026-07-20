@@ -1035,7 +1035,7 @@ function buildNav(){
   const items = isSuper ? [
     {id:'dash',ic:ICO.dash,t:'Panel'},
     {id:'upload',ic:ICO.upload,t:'Cargar datos'},
-    {id:'gen',ic:ICO.gen,t:'Generar cartas'},
+    {id:'gen',ic:ICO.gen,t:'Generar cartas',badge:(cartasListasGenerar()||'')&&String(cartasListasGenerar())},
     {id:'auth',ic:ICO.auth,t:'Autorización',badge:String(CARTAS.filter(c=>c.estado==='pendiente').length)},
     {id:'hist',ic:ICO.hist,t:'Historial'},
     {id:'plantillas',ic:ICO.doc,t:'Plantillas'},
@@ -1481,6 +1481,7 @@ function viewUpload(){
   <div class="panel glass" style="margin-top:14px;border-color:rgba(251,113,133,.25)">
     <div class="panel-h"><div><h3 style="color:var(--bad)">Zona de mantenimiento</h3>
       <div style="font-size:12px;color:var(--txt-3);margin-top:3px">Borra cartas, base, recopilaciones y reinicia la numeración · irreversible</div></div>
+      <button class="btn ghost sm" style="flex:0;margin-right:8px" onclick="limpiarGeneracion()">${svg(ICO.upload,14)} Limpiar carga actual (re-fusionar)</button>
       <button class="btn no sm" style="flex:0" onclick="resetSistema()">${svg(ICO.block,14)} Reiniciar datos (empezar de 0)</button></div>
   </div>`;
   });
@@ -1581,6 +1582,7 @@ function fusionarPD(ev){
         ${res.tiposNoSoportados?`<div style="margin-top:8px;color:var(--warn)">⚠ ${res.tiposNoSoportados} cuentas piden un tipo de carta que el sistema aún no tiene (CASC, Carta Crediticia, etc.)</div>`:''}
       </div>`;
     toast('ok',`PD fusionado · ${res.ok} cuentas listas para generar`);
+  setLoteStamp();
   };
   if(file.name.toLowerCase().endsWith('.csv')){
     reader.onload=()=>process(reader.result,true); reader.readAsText(file);
@@ -1731,7 +1733,7 @@ async function cargarBaseReal(ev){
         ${sinPD?`<div style="margin-top:10px;padding:12px;border-radius:10px;background:rgba(251,191,36,.07);border:1px solid rgba(251,191,36,.2);font-size:12.5px;color:var(--txt-2)">
           ${svg(ICO.bell,14)} <b style="color:var(--warn)">${sinPD} cuentas sin PD explícito</b> — el query no trae el tramo exacto; los gestores deben indicarlo en la recopilación (columna PD). Se usó un valor provisional para no bloquear la vista previa.</div>`:''}
       </div>`;
-    if(parsed.length) toast('ok',`Base cargada · ${parsed.length} representantes reales`);
+    if(parsed.length){ toast('ok',`Base cargada · ${parsed.length} representantes reales`); setLoteStamp(); }
     else toast('info','No se encontraron filas válidas · revisa los encabezados');
   }catch(e){
     document.getElementById('baseDropTitle').textContent='Sube la base del query SQL (.xlsx o .csv)';
@@ -2241,7 +2243,10 @@ async function verEvidencia(num){
       <div class="modal-body" style="text-align:center;padding:20px">
         ${esImg
           ? `<img src="${url}" style="max-width:100%;max-height:60vh;border-radius:10px;border:1px solid rgba(255,255,255,.1)">`
-          : `<p style="color:var(--txt-2);margin-bottom:14px">Archivo adjunto: ${c.evidPath}</p><a class="btn primary" href="${url}" download="${c.evidPath}">${svg(ICO.down)} Descargar archivo</a>`}
+          : (/\.pdf$/i.test(c.evidPath)
+            ? `<iframe src="${url}" style="width:100%;height:60vh;border:1px solid rgba(255,255,255,.12);border-radius:10px;background:#fff"></iframe>
+               <div style="margin-top:10px"><a class="btn ghost sm" href="${url}" download="${c.evidPath}">${svg(ICO.down)} Descargar PDF</a></div>`
+            : `<p style="color:var(--txt-2);margin-bottom:14px">Archivo adjunto: ${c.evidPath}</p><a class="btn primary" href="${url}" download="${c.evidPath}">${svg(ICO.down)} Descargar archivo</a>`)}
         ${c.respNota?`<div style="text-align:left;margin-top:16px;padding:13px;border-radius:11px;background:rgba(45,212,191,.07);border:1px solid rgba(45,212,191,.18);font-size:12.5px;color:var(--txt-2);line-height:1.55"><b style="color:var(--teal)">Respuesta:</b> ${c.respNota}</div>`:''}
         ${soyDueno?`<button class="btn ghost sm" style="margin-top:16px" onclick="reemplazarEvidencia('${num}')">${svg(ICO.upload,13)} Reemplazar evidencia</button>`:''}
       </div>`;
@@ -3290,6 +3295,36 @@ async function dbReset(){
   console.info('[Cartera] Resultado del reinicio:', detalle);
   return {ok:errores.length===0, errores, detalle};
 }
+function cartasListasGenerar(){
+  if(!REPS.length) return 0;
+  return REPS.filter(r=>{const te=(r.tipoSolicitado&&TIPOS[r.tipoSolicitado])?r.tipoSolicitado:null;return te&&validar(r,te).ok;}).length;
+}
+function setLoteStamp(d){
+  d=d||new Date();
+  try{ localStorage.setItem('cartera_lote_ts',d.toISOString()); }catch(e){}
+  const el=document.getElementById('stamp');
+  if(el){const p=n=>String(n).padStart(2,'0'); el.textContent='Cargado: '+p(d.getDate())+'/'+p(d.getMonth()+1)+'/'+d.getFullYear()+' · '+p(d.getHours())+':'+p(d.getMinutes());}
+}
+function restaurarLoteStamp(){
+  try{const s=localStorage.getItem('cartera_lote_ts'); if(s)setLoteStamp(new Date(s));}catch(e){}
+}
+async function dbLimpiarBase(){
+  if(!SB_OK||!sb) return {ok:false};
+  const del=async t=>{try{const {error}=await sb.from(t).delete().not('id','is',null);return !error;}catch(e){return false;}};
+  const a=await del('cartera_representantes'); const b=await del('cartera_recopilacion');
+  return {ok:a&&b};
+}
+async function limpiarGeneracion(){
+  if(!confirm('LIMPIAR LA CARGA ACTUAL\n\nSe borrará la base de cuentas y las recopilaciones cargadas, para volver a subirlas y fusionar sin duplicados.\n\nNO se borran las cartas ya emitidas, ni la numeración de correlativos.\n\n¿Continuar?')) return;
+  toast('info','Limpiando la carga…');
+  const r=await dbLimpiarBase();
+  REPS.length=0; RECOP_CACHE=null; DUENO_CUENTA={}; STATE.sel.clear(); STATE.recopSubida=false;
+  try{ localStorage.removeItem('cartera_lote_ts'); }catch(e){}
+  const el=document.getElementById('stamp'); if(el) el.textContent='Sin base cargada';
+  buildNav();
+  toast(r.ok?'ok':'info', r.ok?'Carga limpiada · vuelve a subir la base y el consolidado':'Limpieza parcial · revisa la conexión');
+  go('upload');
+}
 async function resetSistema(){
   const paso1=confirm(
     'REINICIAR EL SISTEMA\n\n'+
@@ -3336,6 +3371,7 @@ async function resetSistema(){
 /* init */
 initGate();
 initGateLamp();
+restaurarLoteStamp();
 renderLogin();
 initSupabase().then(()=>{
   // Los datos sensibles (representantes, recopilaciones, cartas, firmas) YA NO se cargan
