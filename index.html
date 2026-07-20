@@ -1871,6 +1871,7 @@ function viewGen(){
     ${blocked?`<span class="pill no">${svg(ICO.block,12)} ${blocked} bloqueadas</span>`:''}
     <span class="pill warn">${svg(ICO.bolt,12)} ${auto?'tipo según lo solicitado':'variante automática por mora'}</span>
     <div style="flex:1"></div>
+    <button class="btn no" ${selN?'':'disabled'} style="margin-right:8px" onclick="descartarLote()">${svg(ICO.block)} Descartar (${selN})</button>
     <button class="btn primary" ${selN?'':'disabled'} onclick="generarLote()">${svg(ICO.gen)} Generar lote (${selN})</button>
   </div>`;
 }
@@ -2026,6 +2027,21 @@ function preview(cod){
 function closeModal(){document.getElementById('overlay').classList.remove('show');}
 
 /* ---------- generación por lotes ---------- */
+async function dbBorrarRepresentantes(codigos){
+  if(!SB_OK||!sb||!codigos.length) return false;
+  try{ const {error}=await sb.from('cartera_representantes').delete().in('codigo',codigos); return !error; }catch(e){ return false; }
+}
+async function descartarLote(){
+  const cods=[...STATE.sel];
+  if(!cods.length){ toast('info','Selecciona las cuentas que quieres descartar'); return; }
+  if(!confirm(`DESCARTAR ${cods.length} cuenta(s) de esta carga\n\nNo se les generará carta y se quitarán de la base cargada.\nNO afecta las cartas ya emitidas.\n\n¿Continuar?`)) return;
+  toast('info','Descartando…');
+  const ok=await dbBorrarRepresentantes(cods);
+  for(let i=REPS.length-1;i>=0;i--){ if(cods.includes(REPS[i].cod)) REPS.splice(i,1); }
+  STATE.sel.clear(); buildNav();
+  toast(ok?'ok':'info', ok?`${cods.length} cuenta(s) descartada(s) · no se les generará carta`:'Descarte parcial · revisa la conexión');
+  viewGen();
+}
 async function generarLote(){
   const n=STATE.sel.size;
   const seleccion=[...STATE.sel].map(cod=>REPS.find(r=>r.cod===cod)).filter(Boolean);
