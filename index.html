@@ -1715,7 +1715,10 @@ async function cargarBaseReal(ev){
       else if(!f.pais) errores.push(`Fila ${idx+2}: país "${f.paisTexto}" no reconocido`);
       else parsed.push(f);
     });
-    if(parsed.length){ REPS.length=0; parsed.forEach(p=>REPS.push(p));
+    if(parsed.length){
+      const _byc={}; parsed.forEach(p=>_byc[p.cod]=p); const _keys=Object.keys(_byc);
+      if(_keys.length<parsed.length){ parsed.length=0; _keys.forEach(k=>parsed.push(_byc[k])); } // evita duplicados si el archivo trae códigos repetidos
+      REPS.length=0; parsed.forEach(p=>REPS.push(p));
       dbGuardarRepresentantes(parsed).then(r=>{ if(r.ok) toast('ok','Base sincronizada en Supabase · visible para todos'); else if(SB_OK) toast('info','Base local OK · no se sincronizó: '+r.msg); });
     }
     const porPais={}; parsed.forEach(p=>{porPais[p.pais]=(porPais[p.pais]||0)+1;});
@@ -1796,6 +1799,7 @@ function viewGen(){
   const validos=REPS.filter(r=>{const te=tipoDe(r);return te&&validar(r,te).ok;});
   const blocked=REPS.length-validos.length;
   const selN=STATE.sel.size;
+  const _codes=REPS.map(r=>r.cod); const dupCount=_codes.length-new Set(_codes).size;
 
   // resumen de la carga: por tipo, por país, y motivos de bloqueo agrupados
   const porTipoResumen={}, porPaisResumen={}, motivos={};
@@ -1870,7 +1874,9 @@ function viewGen(){
     <span class="pill ok">${svg(ICO.check,12)} ${validos.length} válidas</span>
     ${blocked?`<span class="pill no">${svg(ICO.block,12)} ${blocked} bloqueadas</span>`:''}
     <span class="pill warn">${svg(ICO.bolt,12)} ${auto?'tipo según lo solicitado':'variante automática por mora'}</span>
+    ${dupCount>0?`<span class="pill no">${svg(ICO.bell,12)} ${dupCount} duplicada(s)</span>`:''}
     <div style="flex:1"></div>
+    ${dupCount>0?`<button class="btn no" style="margin-right:8px" onclick="quitarDuplicados()">${svg(ICO.block)} Quitar duplicados (${dupCount})</button>`:''}
     <button class="btn primary" ${selN?'':'disabled'} onclick="generarLote()">${svg(ICO.gen)} Generar lote (${selN})</button>
   </div>`;
 }
@@ -2026,6 +2032,20 @@ function preview(cod){
 function closeModal(){document.getElementById('overlay').classList.remove('show');}
 
 /* ---------- generación por lotes ---------- */
+async function quitarDuplicados(){
+  const byc={}; REPS.forEach(r=>{ byc[r.cod]=r; });   // la última ocurrencia gana (la más reciente)
+  const dedup=Object.values(byc);
+  const nDup=REPS.length-dedup.length;
+  if(nDup<=0){ toast('info','No hay cuentas duplicadas en esta carga'); return; }
+  if(!confirm(`Se encontraron ${nDup} cuenta(s) duplicada(s) (mismo código).\n\nSe dejará UNA sola por código (la más reciente) y se borrarán las copias de la base.\n\nNO afecta las cartas ya emitidas.\n\n¿Continuar?`)) return;
+  toast('info','Quitando duplicados…');
+  REPS.length=0; dedup.forEach(r=>REPS.push(r));
+  const filas=dedup.map(r=>({cod:r.cod,pais:r.pais,zona:r.zona,nombre:r.nombre,estatus:r.estatus,inact:r.inact,inactividadesInfo:r.inactividadesInfo||'',balance:r.balance,cedula:r.cedula,camp:r.campania}));
+  const res=SB_OK?await dbGuardarRepresentantes(filas):{ok:false};
+  STATE.sel.clear(); buildNav();
+  toast(res.ok?'ok':'info', res.ok?`${nDup} duplicado(s) eliminado(s) · queda una cuenta por código`:'Quitados en pantalla; revisa la conexión para guardar en la base');
+  viewGen();
+}
 async function generarLote(){
   const n=STATE.sel.size;
   const seleccion=[...STATE.sel].map(cod=>REPS.find(r=>r.cod===cod)).filter(Boolean);
