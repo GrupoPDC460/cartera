@@ -1775,6 +1775,19 @@ function yaGenerada(rep,te){
   }
   return rep.prev.some(p=>p.tipo===te&&p.camp===rep.camp);
 }
+async function dbBorrarRep(cod){
+  if(!SB_OK||!sb) return false;
+  try{ const {error}=await sb.from('cartera_representantes').delete().eq('codigo',cod); return !error; }catch(e){ return false; }
+}
+async function eliminarCuenta(cod){
+  const r=REPS.find(x=>x.cod===cod); if(!r) return;
+  if(!confirm(`Quitar a ${r.nombre} (${cod}) de esta carga?\n\nNo se le generará carta. No afecta las cartas ya emitidas.`)) return;
+  const ok=await dbBorrarRep(cod);
+  const i=REPS.findIndex(x=>x.cod===cod); if(i>=0) REPS.splice(i,1);
+  STATE.sel.delete(cod); buildNav();
+  toast(ok?'ok':'info', ok?`${r.nombre.split(' ')[0]} quitada de la carga`:'Quitada en pantalla; revisa la conexión');
+  viewGen();
+}
 function viewGen(){
   if(STATE.role.id==='gestor') STATE.tipo='auto'; // el gestor siempre genera según lo solicitado
   if(!REPS.length){
@@ -1818,7 +1831,8 @@ function viewGen(){
       <td>${v.ok
         ? `<span class="valid ok">${svg(ICO.check,15)} Lista</span>`
         : `<span class="valid no">${svg(ICO.block,15)} Bloqueada <span class="rsn">· ${v.rsn}</span></span>`}</td>
-      <td style="text-align:right">${v.ok?`<button class="btn ghost sm" onclick="preview('${r.cod}')" style="padding:6px 12px">Vista previa</button>`:''}</td>
+      <td style="text-align:right;white-space:nowrap">${v.ok?`<button class="btn ghost sm" onclick="preview('${r.cod}')" style="padding:6px 12px">Vista previa</button>`:''}
+        <button class="btn ghost sm" title="Quitar esta cuenta de la carga" onclick="eliminarCuenta('${r.cod}')" style="padding:6px 9px;color:var(--bad)">${svg(ICO.x,13)}</button></td>
     </tr>`;
   }).join('');
 
