@@ -1012,6 +1012,7 @@ async function cargarDatosSesion(){
     RECOP_CACHE=await dbCargarRecopilaciones(); construirDuenos();
     await dbCargarCartas();
     await reasignarDuenosCartas();
+    autoFusionarCache();   // restaura el tipo solicitado desde el consolidado guardado (evita que al re-loguear salga todo "sin tipo")
   }catch(e){ console.warn('cargarDatosSesion:', e); }
   try{ buildNav(); go(STATE.view||(STATE.role&&STATE.role.id==='gestor'?'perfil':'dash')); }catch(e){}
 }
@@ -1537,6 +1538,14 @@ function aplicarFusionPares(pares){
     ok++;
   });
   return {ok,sinMatch,tiposNoSoportados};
+}
+function autoFusionarCache(){
+  // Restaura el tipo/PD desde el consolidado guardado, en silencio (al iniciar sesión).
+  const pares=[];
+  (RECOP_CACHE||[]).forEach(r=>{(r.csv||'').split('\n').forEach(l=>{
+    if(/^codigo/i.test(l))return; const p=l.split(',').map(x=>x.trim());
+    if(p[0]&&p[1])pares.push(p);});});
+  if(pares.length) aplicarFusionPares(pares);
 }
 function fusionarDesdeCache(){
   const pares=[];
