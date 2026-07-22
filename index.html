@@ -1756,9 +1756,10 @@ function solicitadoBadge(r){
 }
 function construirPrev(){
   REPS.forEach(r=>{ r.prev=[]; });
+  const idx={}; REPS.forEach(r=>{ idx[String(r.cod).trim()]=r; });   // índice por código (texto), robusto a número/texto y a país
   CARTAS.forEach(c=>{
     if(c.estado==='rechazada') return;               // una carta rechazada NO bloquea re-generar
-    const rep=REPS.find(r=>r.cod===c.cod&&r.pais===c.pais); if(!rep) return;
+    const rep=idx[String(c.cod).trim()]; if(!rep) return;
     const sr=(c.snapshot&&c.snapshot.rep)||{};
     rep.prev.push({tipo:c.tipo,
       camp:(sr.camp!=null?sr.camp:(sr.campania!=null?sr.campania:rep.camp)),
@@ -1767,15 +1768,16 @@ function construirPrev(){
 }
 function yaGenerada(rep,te){
   if(!te||!rep.prev||!rep.prev.length) return false;
+  const mismaCamp=p=>String(p.camp).trim()===String(rep.camp).trim();
   if(te==='cobro'){
     const v=variantePorPD(rep.inact,rep.estatus);
     return rep.prev.some(p=>{
-      if(p.tipo!=='cobro'||p.camp!==rep.camp) return false;
+      if(p.tipo!=='cobro'||!mismaCamp(p)) return false;
       if(v.id==='recovery') return p.estatus==='M'||p.estatus==='R';
       return p.pd>=v.pdMin&&p.pd<=v.pdMax;
     });
   }
-  return rep.prev.some(p=>p.tipo===te&&p.camp===rep.camp);
+  return rep.prev.some(p=>p.tipo===te&&mismaCamp(p));
 }
 async function dbBorrarRep(cod){
   if(!SB_OK||!sb) return false;
