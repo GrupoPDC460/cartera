@@ -1752,6 +1752,29 @@ function solicitadoBadge(r){
   if(r.tipoSolicitado==='desconocido') return `<span class="pd-chip pd-C">"${r.tipoSolicitadoTexto}" ?</span>`;
   return `<span class="pd-chip pd-A">${TIPOS[r.tipoSolicitado].nombre}</span>`;
 }
+function construirPrev(){
+  REPS.forEach(r=>{ r.prev=[]; });
+  CARTAS.forEach(c=>{
+    if(c.estado==='rechazada') return;               // una carta rechazada NO bloquea re-generar
+    const rep=REPS.find(r=>r.cod===c.cod&&r.pais===c.pais); if(!rep) return;
+    const sr=(c.snapshot&&c.snapshot.rep)||{};
+    rep.prev.push({tipo:c.tipo,
+      camp:(sr.camp!=null?sr.camp:(sr.campania!=null?sr.campania:rep.camp)),
+      pd:(sr.inact!=null?+sr.inact:0), estatus:sr.estatus||rep.estatus});
+  });
+}
+function yaGenerada(rep,te){
+  if(!te||!rep.prev||!rep.prev.length) return false;
+  if(te==='cobro'){
+    const v=variantePorPD(rep.inact,rep.estatus);
+    return rep.prev.some(p=>{
+      if(p.tipo!=='cobro'||p.camp!==rep.camp) return false;
+      if(v.id==='recovery') return p.estatus==='M'||p.estatus==='R';
+      return p.pd>=v.pdMin&&p.pd<=v.pdMax;
+    });
+  }
+  return rep.prev.some(p=>p.tipo===te&&p.camp===rep.camp);
+}
 function viewGen(){
   if(STATE.role.id==='gestor') STATE.tipo='auto'; // el gestor siempre genera según lo solicitado
   if(!REPS.length){
@@ -1770,7 +1793,10 @@ function viewGen(){
   const tipo=STATE.tipo;
   const auto=tipo==='auto'; // "Según lo solicitado": cada cuenta usa su tipoSolicitado
   const tipoDe=r=>auto?(r.tipoSolicitado&&TIPOS[r.tipoSolicitado]?r.tipoSolicitado:null):tipo;
-  const rows=REPS.map(r=>{
+  construirPrev();
+  const visibles=REPS.filter(r=>!yaGenerada(r,tipoDe(r)));   // oculta las cuentas cuyo tramo ya tiene carta
+  const ocultas=REPS.length-visibles.length;
+  const rows=visibles.map(r=>{
     const tEfectivo=tipoDe(r);
     const v=tEfectivo?validar(r,tEfectivo):{ok:false,rsn:'Sin tipo solicitado · márcalo en la recopilación'};
     const variante=tEfectivo==='cobro'?variantePorPD(r.inact,r.estatus):null;
@@ -1796,14 +1822,14 @@ function viewGen(){
     </tr>`;
   }).join('');
 
-  const validos=REPS.filter(r=>{const te=tipoDe(r);return te&&validar(r,te).ok;});
-  const blocked=REPS.length-validos.length;
+  const validos=visibles.filter(r=>{const te=tipoDe(r);return te&&validar(r,te).ok;});
+  const blocked=visibles.length-validos.length;
   const selN=STATE.sel.size;
-  const _codes=REPS.map(r=>r.cod); const dupCount=_codes.length-new Set(_codes).size;
+  const _codes=visibles.map(r=>r.cod); const dupCount=_codes.length-new Set(_codes).size;
 
   // resumen de la carga: por tipo, por país, y motivos de bloqueo agrupados
   const porTipoResumen={}, porPaisResumen={}, motivos={};
-  REPS.forEach(r=>{
+  visibles.forEach(r=>{
     const te=tipoDe(r);
     const v=te?validar(r,te):{ok:false,rsn:'Sin tipo solicitado · márcalo en la recopilación'};
     const iso=r.pais;
@@ -1814,7 +1840,7 @@ function viewGen(){
   const resumenCarga=`
   <div class="panel glass" style="margin-bottom:14px">
     <div class="panel-h"><div><h3>Resumen de esta carga</h3>
-      <div style="font-size:12px;color:var(--txt-3);margin-top:3px">${REPS.length} cuentas en la base · ${validos.length} listas · ${blocked} bloqueadas</div></div>
+      <div style="font-size:12px;color:var(--txt-3);margin-top:3px">${visibles.length} cuentas pendientes · ${validos.length} listas · ${blocked} bloqueadas${ocultas>0?` · <span style="color:var(--teal)">${ocultas} ya generadas (ocultas)</span>`:''}</div></div>
       <div style="display:flex;gap:8px">
         <span class="pill ok">${svg(ICO.check,12)} ${validos.length} listas</span>
         ${blocked?`<span class="pill no">${svg(ICO.block,12)} ${blocked} bloqueadas</span>`:''}
@@ -2111,7 +2137,7 @@ function viewAuth(){
       <div class="auth-actions">
         <button class="btn sm ok" onclick="approve(this,'${x.num}')">${svg(ICO.check,15)} Aprobar</button>
         <button class="btn sm ghost" style="flex:0 0 auto" onclick="showLetter('${x.rep.cod}','${x.tipo||'cobro'}','${x.num}')">Ver</button>
-        <button class="btn sm no" onclick="reject(this)">${svg(ICO.x,15)}</button>
+        <button class="btn sm no" onclick="reject(this,'${x.num}')">${svg(ICO.x,15)}</button>
       </div>
     </div>`).join('')}</div>`
   :`<div class="empty glass" style="padding:70px">${svg(ICO.check,46)}<h3>Todo al día</h3><p>No hay cartas pendientes de autorización.</p></div>`}`;
@@ -2138,7 +2164,29 @@ async function approve(btn,num){
   setTimeout(()=>{card.remove();toast('ok',`${num} aprobada y firmada`);
     if(!document.querySelector('.auth-card'))viewAuth();},400);
 }
-function reject(btn){btn.closest('.auth-card').style.opacity='0';setTimeout(()=>{btn.closest('.auth-card').remove();toast('info','Carta rechazada con motivo');},400);}
+async function reject(btn,num){
+  const card=btn.closest('.auth-card');
+  await dbRechazar(num);
+  const cc=CARTAS.find(x=>x.num===num); if(cc)cc.estado='rechazada';
+  card.style.transition='.4s';card.style.opacity='0';card.style.transform='scale(.96)';
+  buildNav();
+  setTimeout(()=>{card.remove();toast('info',`${num} rechazada`);
+    if(!document.querySelector('.auth-card'))viewAuth();},400);
+}
+async function rejectAll(){
+  const cards=[...document.querySelectorAll('.auth-card')];
+  if(!cards.length){toast('info','No hay cartas pendientes');return;}
+  if(!confirm(`Rechazar las ${cards.length} cartas pendientes?\n\nQuedarán marcadas como rechazadas.`)) return;
+  for(const c of cards){
+    const num=c.dataset.num;
+    await dbRechazar(num);
+    const cc=CARTAS.find(x=>x.num===num); if(cc)cc.estado='rechazada';
+    c.style.transition='.3s';c.style.opacity='0';
+    await new Promise(r=>setTimeout(r,120)); c.remove();
+  }
+  toast('info',`${cards.length} cartas rechazadas`);
+  buildNav(); viewAuth();
+}
 
 /* ============ HISTORIAL ============ */
 function tipoLabel(rep,tipo){
@@ -3178,6 +3226,10 @@ async function dbAprobar(num,quien){
     const {error}=await sb.from('cartera_cartas').update({estado:'aprobada',snapshot:snap}).eq('num_correlativo',num);
     return !error;
   }catch(e){return false;}
+}
+async function dbRechazar(num){
+  if(!SB_OK||!sb) return false;
+  try{ const {error}=await sb.from('cartera_cartas').update({estado:'rechazada'}).eq('num_correlativo',num); return !error; }catch(e){return false;}
 }
 async function dbEntrega(num,estado,canal,evidPath,nota){
   if(!SB_OK||!sb) return false;
