@@ -1037,6 +1037,7 @@ function buildNav(){
     {id:'upload',ic:ICO.upload,t:'Cargar datos'},
     {id:'gen',ic:ICO.gen,t:'Generar cartas',badge:(cartasListasGenerar()||'')&&String(cartasListasGenerar())},
     {id:'auth',ic:ICO.auth,t:'Autorización',badge:String(CARTAS.filter(c=>c.estado==='pendiente').length)},
+    {id:'bloqueo',ic:ICO.block,t:'Bloqueo de cartas'},
     {id:'hist',ic:ICO.hist,t:'Historial'},
     {id:'plantillas',ic:ICO.doc,t:'Plantillas'},
     {id:'firma',ic:ICO.sign,t:'Mi firma'},
@@ -1057,6 +1058,7 @@ function buildNav(){
 const TITLES={dash:['Panel','Resumen general de la operación'],
   upload:['Cargar datos','Importa el resultado del query SQL'],
   gen:['Generar cartas','Selecciona cuentas y emite por lote'],
+  bloqueo:['Bloqueo de cartas','Cuentas que no se pueden generar · para tu control'],
   auth:['Autorización','Cartas en espera de tu firma'],
   hist:['Historial','Registro completo de cartas emitidas'],
   users:['Personas','Gestores y supervisión · administración de accesos'],
@@ -1072,7 +1074,7 @@ function go(v){
   document.getElementById('vTitle').textContent=TITLES[v][0];
   document.getElementById('vCrumb').textContent=TITLES[v][1];
   const el=document.getElementById('view'); el.classList.remove('fade');void el.offsetWidth;el.classList.add('fade');
-  ({dash:viewDash,upload:viewUpload,gen:viewGen,auth:viewAuth,hist:viewHist,users:viewUsers,firma:viewFirma,recop:viewRecop,perfil:viewPerfil,plantillas:viewPlantillas,ayuda:viewAyuda}[v])();
+  ({dash:viewDash,upload:viewUpload,gen:viewGen,bloqueo:viewBloqueadas,auth:viewAuth,hist:viewHist,users:viewUsers,firma:viewFirma,recop:viewRecop,perfil:viewPerfil,plantillas:viewPlantillas,ayuda:viewAyuda}[v])();
 }
 
 /* ============ INSTRUCCIONES DE USO ============ */
@@ -1788,6 +1790,39 @@ async function eliminarCuenta(cod){
   toast(ok?'ok':'info', ok?`${r.nombre.split(' ')[0]} quitada de la carga`:'Quitada en pantalla; revisa la conexión');
   viewGen();
 }
+function viewBloqueadas(){
+  if(!REPS.length){ document.getElementById('view').innerHTML=`<div class="empty glass" style="padding:70px">${svg(ICO.upload,46)}<h3>No hay cuentas cargadas</h3><p style="margin-top:10px">Carga una base para ver el bloqueo.</p></div>`; return; }
+  const auto=STATE.tipo==='auto';
+  const tipoDe=r=>auto?(r.tipoSolicitado&&TIPOS[r.tipoSolicitado]?r.tipoSolicitado:null):STATE.tipo;
+  construirPrev();
+  const bloq=REPS.filter(r=>!yaGenerada(r,tipoDe(r))).filter(r=>{const te=tipoDe(r);return !(te&&validar(r,te).ok);});
+  const motivos={};
+  bloq.forEach(r=>{const te=tipoDe(r);const v=te?validar(r,te):{ok:false,rsn:'Sin tipo solicitado · márcalo en la recopilación'};const m=v.rsn.split(' · ')[0];motivos[m]=(motivos[m]||0)+1;});
+  const rows=bloq.map(r=>{
+    const p=PAISES[r.pais]||{nombre:r.pais,moneda:''};
+    const te=tipoDe(r);
+    const v=te?validar(r,te):{ok:false,rsn:'Sin tipo solicitado · márcalo en la recopilación'};
+    const pdClass=r.inact>=7?'pd-7':(r.estatus==='A'?'pd-A':'pd-C');
+    return `<tr>
+      <td><div class="flag"><span class="fc">${r.pais}</span>${p.nombre}</div></td>
+      <td><div class="rep-nm">${r.nombre}</div><div class="rep-cod">${r.cod} · Zona ${r.zona}</div></td>
+      <td><span class="money">${money(p.moneda,r.balance)}</span></td>
+      <td><span class="pd-chip ${pdClass}">${r.estatus}·PD${r.inact||0}</span></td>
+      <td>${solicitadoBadge(r)}</td>
+      <td><span class="valid no">${svg(ICO.block,14)} ${v.rsn}</span></td>
+      <td style="text-align:right"><button class="btn ghost sm" title="Quitar de la carga" onclick="eliminarCuenta('${r.cod}')" style="color:var(--bad)">${svg(ICO.x,13)} Quitar</button></td>
+    </tr>`;
+  }).join('');
+  document.getElementById('view').innerHTML=`
+  <div style="margin-bottom:14px;padding:13px 16px;border-radius:12px;background:rgba(45,212,191,.06);border:1px solid rgba(45,212,191,.16);font-size:12.5px;color:var(--txt-2);line-height:1.6">
+    ${svg(ICO.bolt,14)} Estas cuentas <b>no se pueden generar</b> por el motivo indicado (sin tipo solicitado, saldo que no aplica, duplicada, etc.). Se mantienen aquí, <b>fuera de Generar cartas</b>, para tu control. Corrige el tipo en la recopilación, o quítalas con la X.</div>
+  ${bloq.length?`<div class="panel glass" style="margin-bottom:14px"><div class="panel-h"><h3>Motivos</h3><span class="hint">${bloq.length} cuentas</span></div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px">${Object.entries(motivos).sort((a,b)=>b[1]-a[1]).map(([m,c])=>`<span class="mtag"><b style="color:var(--bad)">${c}</b> · ${m}</span>`).join('')}</div></div>
+  <div class="tbl-wrap glass"><table class="tbl">
+    <thead><tr><th>País</th><th>Representante</th><th>Balance</th><th>Mora</th><th>Solicitado</th><th>Motivo</th><th></th></tr></thead>
+    <tbody>${rows}</tbody></table></div>`
+  :`<div class="empty glass" style="padding:70px">${svg(ICO.check,46)}<h3>No hay cuentas bloqueadas</h3><p style="margin-top:10px">Todo lo cargado está listo o ya generado. 🎉</p></div>`}`;
+}
 function viewGen(){
   if(STATE.role.id==='gestor') STATE.tipo='auto'; // el gestor siempre genera según lo solicitado
   if(!REPS.length){
@@ -1809,7 +1844,7 @@ function viewGen(){
   construirPrev();
   const visibles=REPS.filter(r=>!yaGenerada(r,tipoDe(r)));   // oculta las cuentas cuyo tramo ya tiene carta
   const ocultas=REPS.length-visibles.length;
-  const rows=visibles.map(r=>{
+  const rows=visibles.filter(r=>{const _t=tipoDe(r);return _t&&validar(r,_t).ok;}).map(r=>{
     const tEfectivo=tipoDe(r);
     const v=tEfectivo?validar(r,tEfectivo):{ok:false,rsn:'Sin tipo solicitado · márcalo en la recopilación'};
     const variante=tEfectivo==='cobro'?variantePorPD(r.inact,r.estatus):null;
@@ -1869,12 +1904,12 @@ function viewGen(){
         </div>
       </div>
       <div>
-        <div style="font-size:12px;color:var(--txt-3);margin-bottom:8px;font-weight:600">MOTIVOS DE BLOQUEO</div>
-        ${Object.keys(motivos).length?Object.entries(motivos).sort((a,b)=>b[1]-a[1]).map(([m,c])=>`
-          <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--stroke)">
-            <span style="flex:0 0 26px;text-align:center;font-family:'Space Grotesk';font-weight:700;color:var(--bad)">${c}</span>
-            <span style="font-size:12.5px;color:var(--txt-2)">${m}</span></div>`).join('')
-        :'<div style="font-size:12.5px;color:var(--ok);padding:10px 0">✓ Ninguna cuenta bloqueada · todo listo para generar</div>'}
+        <div style="font-size:12px;color:var(--txt-3);margin-bottom:8px;font-weight:600">ESTADO DE LA CARGA</div>
+        <div style="font-size:13px;color:var(--ok);padding:6px 0">✓ ${validos.length} listas para generar</div>
+        ${blocked?`<div style="margin-top:10px;padding:12px 14px;border-radius:11px;background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.18)">
+          <div style="font-size:12.5px;color:var(--txt-2);margin-bottom:9px">${blocked} cuenta(s) no se pueden generar (sin tipo, saldo, etc.). Se manejan aparte para no ensuciar esta vista.</div>
+          <button class="btn ghost sm" onclick="go('bloqueo')" style="color:var(--bad)">${svg(ICO.block,13)} Ver en Bloqueo de cartas</button></div>`
+        :`<div style="font-size:12.5px;color:var(--txt-3);padding:6px 0">Ninguna cuenta bloqueada · todo limpio.</div>`}
       </div>
     </div>
   </div>`;
