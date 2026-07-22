@@ -1903,6 +1903,7 @@ function viewGen(){
     ${dupCount>0?`<span class="pill no">${svg(ICO.bell,12)} ${dupCount} duplicada(s)</span>`:''}
     <div style="flex:1"></div>
     ${dupCount>0?`<button class="btn no" style="margin-right:8px" onclick="quitarDuplicados()">${svg(ICO.block)} Quitar duplicados (${dupCount})</button>`:''}
+    ${blocked>0?`<button class="btn ghost" style="margin-right:8px" onclick="quitarBloqueadas()">${svg(ICO.block)} Quitar bloqueadas (${blocked})</button>`:''}
     <button class="btn primary" ${selN?'':'disabled'} onclick="generarLote()">${svg(ICO.gen)} Generar lote (${selN})</button>
   </div>`;
 }
@@ -2071,6 +2072,21 @@ async function quitarDuplicados(){
   STATE.sel.clear(); buildNav();
   toast(res.ok?'ok':'info', res.ok?`${nDup} duplicado(s) eliminado(s) · queda una cuenta por código`:'Quitados en pantalla; revisa la conexión para guardar en la base');
   viewGen();
+}
+async function quitarBloqueadas(){
+  const auto=STATE.tipo==='auto';
+  const tDe=r=>auto?(r.tipoSolicitado&&TIPOS[r.tipoSolicitado]?r.tipoSolicitado:null):STATE.tipo;
+  construirPrev();
+  const bloqueadas=REPS.filter(r=>{ const te=tDe(r); if(yaGenerada(r,te)) return false; return !(te&&validar(r,te).ok); });
+  if(!bloqueadas.length){ toast('info','No hay cuentas bloqueadas en la carga'); return; }
+  if(!confirm(`Quitar ${bloqueadas.length} cuenta(s) bloqueada(s) de la carga?\n\nSon cuentas que no pueden generar carta (sin tipo, saldo cero, etc.). Se quitan de la base cargada.\nNO afecta las cartas ya emitidas. Si vuelves a subir la base, reaparecen.\n\n¿Continuar?`)) return;
+  const quitar=new Set(bloqueadas.map(r=>r.cod+'|'+r.pais));
+  const quedan=REPS.filter(r=>!quitar.has(r.cod+'|'+r.pais));
+  toast('info','Quitando bloqueadas…');
+  REPS.length=0; quedan.forEach(r=>REPS.push(r));
+  const filas=quedan.map(r=>({cod:r.cod,pais:r.pais,zona:r.zona,nombre:r.nombre,estatus:r.estatus,inact:r.inact,inactividadesInfo:r.inactividadesInfo||'',balance:r.balance,cedula:r.cedula,camp:r.campania}));
+  const res=SB_OK?await dbGuardarRepresentantes(filas):{ok:false};
+  buildNav(); toast(res.ok?'ok':'info',res.ok?`${bloqueadas.length} bloqueada(s) quitada(s)`:'Quitadas en pantalla; revisa la conexión'); viewGen();
 }
 async function generarLote(){
   const n=STATE.sel.size;
