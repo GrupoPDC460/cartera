@@ -1035,7 +1035,7 @@ function buildNav(){
   const items = isSuper ? [
     {id:'dash',ic:ICO.dash,t:'Panel'},
     {id:'upload',ic:ICO.upload,t:'Cargar datos'},
-    {id:'gen',ic:ICO.gen,t:'Generar cartas',badge:(cartasListasGenerar()||'')&&String(cartasListasGenerar())},
+    {id:'gen',ic:ICO.gen,t:'Generar cartas',badge:(()=>{const n=cartasListasGenerar();return n>0?String(n):'';})()},
     {id:'auth',ic:ICO.auth,t:'Autorización',badge:String(CARTAS.filter(c=>c.estado==='pendiente').length)},
     {id:'bloqueo',ic:ICO.block,t:'Bloqueo de cartas'},
     {id:'hist',ic:ICO.hist,t:'Historial'},
@@ -3427,7 +3427,10 @@ async function dbReset(){
 }
 function cartasListasGenerar(){
   if(!REPS.length) return 0;
-  return REPS.filter(r=>{const te=(r.tipoSolicitado&&TIPOS[r.tipoSolicitado])?r.tipoSolicitado:null;return te&&validar(r,te).ok;}).length;
+  construirPrev();
+  const auto=STATE.tipo==='auto';
+  const tipoDe=r=>auto?(r.tipoSolicitado&&TIPOS[r.tipoSolicitado]?r.tipoSolicitado:null):STATE.tipo;
+  return REPS.filter(r=>{const te=tipoDe(r); return te&&!yaGenerada(r,te)&&validar(r,te).ok;}).length;
 }
 function setLoteStamp(d){
   d=d||new Date();
