@@ -3026,7 +3026,7 @@ function delegPanel(){
           <button class="btn ghost sm" style="color:var(--bad)" onclick="quitarDelegacion()">Retirar</button></div>`
       : `<div class="toolbar" style="margin:0">
           <div class="field" style="flex:1"><label>Designar gestor</label>
-            <select class="select" id="delGestor" style="width:100%">${GESTORES.map(g=>`<option>${g.nombre.split(' ').slice(0,3).join(' ')}</option>`).join('')}</select></div>
+            <select class="select" id="delGestor" style="width:100%">${GESTORES.map(g=>`<option value="${g.nombre}">${g.nombre.split(' ').slice(0,3).join(' ')}</option>`).join('')}</select></div>
           <div class="field"><label>&nbsp;</label><button class="btn primary" onclick="delegarCarga()">${svg(ICO.shield)} Delegar carga</button></div>
         </div>`}
   </div>`;
