@@ -292,6 +292,11 @@ body{
 
 /* ===== DASHBOARD ===== */
 .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:14px}
+.kpis.k5{grid-template-columns:repeat(5,1fr);gap:12px}
+.kpis.k5 .kpi{padding:16px 15px}
+.kpis.k5 .kpi .val{font-size:27px}
+.kpis.k5 .kpi .lab{margin-bottom:10px;font-size:11.5px}
+.kpis.k5 .kpi .meta{font-size:11px;margin-top:7px;line-height:1.35}
 .kpi{padding:20px;border-radius:var(--r);overflow:hidden}
 .kpi .lab{font-size:12px;color:var(--txt-2);display:flex;align-items:center;gap:8px;margin-bottom:14px;font-weight:500}
 .kpi .ic{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;background:var(--glass-2);border:1px solid var(--stroke)}
@@ -493,7 +498,8 @@ tbody tr.blocked{opacity:.62}
 .gen-prog h3{font-family:'Space Grotesk';font-weight:600;font-size:17px}
 .gen-prog p{color:var(--txt-3);font-size:13px;font-family:'JetBrains Mono'}
 
-@media(max-width:1100px){.kpis{grid-template-columns:repeat(2,1fr)}.grid-2{grid-template-columns:1fr}}
+@media(max-width:1400px){.kpis.k5{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:1100px){.kpis{grid-template-columns:repeat(2,1fr)}.kpis.k5{grid-template-columns:repeat(2,1fr)}.grid-2{grid-template-columns:1fr}}
 @media(max-width:820px){.sidebar{display:none}.content{margin:10px}.modal-body{flex-direction:column}.preview-side{width:100%}}
 .fade{animation:fade .5s ease}
 @keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
@@ -1163,6 +1169,26 @@ function viewDashSuper(){
   const pct=(n,d)=>d?Math.round(n/d*100):0;
   const montoDe=c=>{const r=c.snapshot&&c.snapshot.rep;return r?(parseFloat(r.balance)||0):0;};
   const fmt=v=>Math.round(v).toLocaleString('es-GT');
+  const corto=v=>{const a=Math.abs(v);
+    if(a>=1e6) return (v/1e6).toFixed(1).replace('.0','')+'M';
+    if(a>=1000) return (v/1000).toFixed(1).replace('.0','')+'K';
+    return Math.round(v).toLocaleString('es-GT');};
+  /* --- tiempos de ciclo (solo cartas con sello de tiempo registrado) --- */
+  const diasEntre=(a,b)=>{if(!a||!b)return null;const d1=new Date(a),d2=new Date(b);
+    if(isNaN(d1)||isNaN(d2))return null;const d=(d2-d1)/86400000;return d>=0?d:null;};
+  const T1=[],T2=[],T3=[],TT=[];
+  F.forEach(c=>{const fe=c.fecha?c.fecha+'T12:00:00':null;let d;
+    if((d=diasEntre(fe,c.tGerente))!=null)T1.push(d);
+    if((d=diasEntre(c.tGerente,c.tEntrega))!=null)T2.push(d);
+    if((d=diasEntre(c.tEntrega,c.tRespuesta))!=null)T3.push(d);
+    if((d=diasEntre(fe,c.tEntrega))!=null)TT.push(d);});
+  const prom=a=>a.length?(a.reduce((x,y)=>x+y,0)/a.length):null;
+  const dLab=v=>v==null?'—':(v<1?Math.round(v*24)+' h':v.toFixed(1)+' d');
+  const ciclos=[['Emisión → enviada a gerente',prom(T1),T1.length],
+                ['Gerente → representante',prom(T2),T2.length],
+                ['Entregada → respuesta',prom(T3),T3.length],
+                ['Total: emisión → entrega',prom(TT),TT.length]];
+  const hayTiempos=ciclos.some(c=>c[1]!=null);
 
   /* --- cartera por país (cada país en SU moneda; sumar monedas distintas no tiene sentido) --- */
   const pais={};
@@ -1229,7 +1255,7 @@ function viewDashSuper(){
     <div class="field"><label>&nbsp;</label><span class="pill ok">${total} cartas emitidas en vista</span></div>
   </div>
 
-  <div class="kpis">
+  <div class="kpis k5">
     ${kpi('Cartera gestionada',
         unaMoneda?`<span style="font-size:19px">${monedas[0]}</span> ${fmt(montoTotal)}`:`${paisArr.length}<span style="font-size:15px"> países</span>`,
         unaMoneda?`saldo de las cuentas con carta`:`monedas distintas · ver desglose abajo`,ICO.doc,'var(--teal)')}
@@ -1250,11 +1276,11 @@ function viewDashSuper(){
       :`<div style="text-align:center;padding:40px;color:var(--txt-3);font-size:13px">Sin cartas emitidas en esta vista.</div>`}
     </div>
     <div class="panel glass"><div class="panel-h"><div><h3>Cartera por país</h3>
-      <div style="font-size:11.5px;color:var(--txt-3);margin-top:3px">Saldo gestionado · cada país en su moneda</div></div></div>
-      ${paisArr.length?paisArr.map(([iso,p])=>`<div class="type-row"><span class="tn" style="flex:0 0 110px">${(PAISES[iso]||{}).nombre||iso}</span>
-        <div class="tmeter" style="flex:1"><i style="width:${(p.monto/Math.max(1,paisArr[0][1].monto))*100}%"></i></div>
-        <span class="tv" style="width:auto;min-width:130px;text-align:right">${simb(iso)} ${fmt(p.monto)}
-          <span style="color:var(--txt-3);font-size:11px">· ${p.n} cartas</span></span></div>`).join('')
+      <div style="font-size:11.5px;color:var(--txt-3);margin-top:3px">Saldo gestionado · cada país en su moneda (las alturas no se comparan entre monedas)</div></div></div>
+      ${paisArr.length?`<div class="bars" style="height:210px">${paisArr.map(([iso,p])=>`<div class="bar-col">
+        <span class="bar-val" style="font-size:11px">${simb(iso)} ${corto(p.monto)}</span>
+        <div class="bar-track"><div class="bar b1" style="height:${(p.monto/Math.max(1,paisArr[0][1].monto))*100}%"></div></div>
+        <span class="bar-lab">${iso}<span style="display:block;color:var(--txt-3);font-size:9.5px">${p.n} cartas</span></span></div>`).join('')}</div>`
       :`<div style="text-align:center;padding:40px;color:var(--txt-3);font-size:13px">Sin datos por país.</div>`}
     </div>
   </div>
@@ -1274,6 +1300,19 @@ function viewDashSuper(){
           <span style="color:var(--txt-3);font-size:11px">· ${pdResp[i]}/${pdEnt[i]}</span></span></div>`:'').join('')
       :`<div style="text-align:center;padding:40px;color:var(--txt-3);font-size:13px">Aún no hay cartas entregadas para medir efectividad.</div>`}
     </div>
+  </div>
+
+  <div class="panel glass" style="margin-bottom:14px"><div class="panel-h"><div><h3>Tiempos de ciclo</h3>
+    <div style="font-size:11.5px;color:var(--txt-3);margin-top:3px">Cuánto tarda una carta en avanzar de un paso al siguiente (promedio)</div></div>
+    ${hayTiempos?`<span class="hint">basado en cartas con registro</span>`:''}</div>
+    ${hayTiempos?`<div class="grid-2" style="gap:12px">${ciclos.map(([lab,v,n])=>`
+      <div style="display:flex;align-items:center;gap:12px;padding:11px 13px;border-radius:11px;background:rgba(255,255,255,.03);border:1px solid var(--stroke)">
+        <div style="font-family:'Space Grotesk';font-weight:700;font-size:21px;color:${v==null?'var(--txt-3)':(v>7?'var(--bad)':(v>3?'var(--warn)':'var(--ok)'))};min-width:74px">${dLab(v)}</div>
+        <div><div style="font-size:12.5px;color:var(--txt-2)">${lab}</div>
+          <div style="font-size:11px;color:var(--txt-3);margin-top:2px">${n} carta(s) medidas</div></div>
+      </div>`).join('')}</div>`
+    :`<div style="padding:22px;text-align:center;color:var(--txt-3);font-size:12.5px;line-height:1.6">
+        Aún no hay tiempos registrados.<br>Se empiezan a medir desde ahora: cada vez que una carta avance de paso, queda su fecha y aquí verás los promedios.</div>`}
   </div>
 
   <div class="panel glass"><div class="panel-h"><div><h3>Desempeño por gestor</h3>
@@ -3331,6 +3370,7 @@ async function dbCargarCartas(){
       CARTAS.push({num:c.num_correlativo,cod:c.rep_codigo,pais:c.pais,tipo:c.tipo,variante:c.variante,gestor:(c.snapshot&&c.snapshot.gestor)||'—',
         fecha:String(c.fecha_emision||c.creada_en||'').slice(0,10),autorizo:(c.snapshot&&c.snapshot.autorizo)||'—',
         entrega:c.entrega_estado||'emitida',canal:c.canal,evid:!!c.evidencia_path,evidPath:c.evidencia_path||null,respNota:c.respuesta_nota||null,estado:c.estado,
+        tGerente:c.fecha_gerente||null,tEntrega:c.fecha_entrega||null,tRespuesta:c.fecha_respuesta||null,
         emitidaPor:(c.snapshot&&c.snapshot.emitidaPor)||null,dbId:c.id,snapshot:c.snapshot});
       if(c.snapshot&&c.snapshot.rep&&!REPS.find(r=>r.cod===c.rep_codigo&&r.pais===c.snapshot.rep.pais)){
         REPS.push(c.snapshot.rep);
@@ -3373,6 +3413,11 @@ async function dbEntrega(num,estado,canal,evidPath,nota){
   if(!SB_OK||!sb) return false;
   try{
     const upd={entrega_estado:estado}; if(canal)upd.canal=canal; if(evidPath)upd.evidencia_path=evidPath; if(nota!=null)upd.respuesta_nota=nota;
+    // sello de tiempo del paso (para medir días de ciclo)
+    const ahora=new Date().toISOString();
+    if(estado==='enviada_gerente') upd.fecha_gerente=ahora;
+    else if(estado==='entregada')  upd.fecha_entrega=ahora;
+    else if(estado==='respondida') upd.fecha_respuesta=ahora;
     const {error}=await sb.from('cartera_cartas').update(upd).eq('num_correlativo',num);
     return !error;
   }catch(e){return false;}
