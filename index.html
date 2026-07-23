@@ -1338,8 +1338,14 @@ function viewDashSuper(){
   const resp=F.filter(c=>c.entrega==='respondida').length;
   const pct=(n,d)=>d?Math.round(n/d*100):0;
   const montoDe=c=>{const r=c.snapshot&&c.snapshot.rep;return r?(parseFloat(r.balance)||0):0;};
+  /* Cartas de CIERRE (finiquito / cuenta al día): la cuenta ya no tiene deuda.
+     No son cartera en riesgo — son gestiones resueltas, y se cuentan aparte.
+     Los saldos negativos son saldo A FAVOR: cuentan como 0, nunca restan. */
+  const esCierre=c=>c.tipo==='finiquito'||c.tipo==='aldia';
+  const montoRiesgo=c=>{ if(esCierre(c)) return 0; const v=montoDe(c); return v>0?v:0; };
+  const cerradas=F.filter(esCierre).length;
   const tasaDe=iso=>{const t=(PAISES[iso]||{}).tasa; return (t&&t>0)?t:1;};
-  const usdDe=c=>montoDe(c)/tasaDe(c.pais);   // consolidación en dólares
+  const usdDe=c=>montoRiesgo(c)/tasaDe(c.pais);   // consolidación en dólares (solo lo que se debe)
   const fmt=v=>Math.round(v).toLocaleString('es-GT');
   const corto=v=>{const a=Math.abs(v);
     if(a>=1e6) return (v/1e6).toFixed(1).replace('.0','')+'M';
@@ -1366,8 +1372,8 @@ function viewDashSuper(){
   const pais={};
   F.forEach(c=>{const iso=c.pais||'—';
     const p=pais[iso]=pais[iso]||{n:0,monto:0,usd:0,pd7:0,pd7monto:0,entreg:0,resp:0};
-    p.n++; p.monto+=montoDe(c); p.usd+=usdDe(c);
-    if(pdDeCarta(c)===7){p.pd7++;p.pd7monto+=montoDe(c);}
+    p.n++; p.monto+=montoRiesgo(c); p.usd+=usdDe(c);
+    if(pdDeCarta(c)===7){p.pd7++;p.pd7monto+=montoRiesgo(c);}
     if(['entregada','respondida'].includes(c.entrega))p.entreg++;
     if(c.entrega==='respondida')p.resp++;});
   const paisArr=Object.entries(pais).sort((a,b)=>b[1].usd-a[1].usd);
@@ -1376,7 +1382,7 @@ function viewDashSuper(){
   const montoTotal=paisArr.reduce((a,[,p])=>a+p.monto,0);
   const usdTotal=paisArr.reduce((a,[,p])=>a+p.usd,0);
   const pd7Cartas=F.filter(c=>pdDeCarta(c)===7);
-  const pd7Monto=pd7Cartas.reduce((a,c)=>a+montoDe(c),0);
+  const pd7Monto=pd7Cartas.reduce((a,c)=>a+montoRiesgo(c),0);
   const pd7Usd=pd7Cartas.reduce((a,c)=>a+usdDe(c),0);
 
   /* --- embudo con conversión PASO A PASO (dónde se cae el flujo) --- */
@@ -1390,7 +1396,7 @@ function viewDashSuper(){
   /* --- tramos: volumen, dinero y EFECTIVIDAD (qué tramo responde) --- */
   const pdN=[0,0,0,0,0,0,0],pdMonto=[0,0,0,0,0,0,0],pdUsd=[0,0,0,0,0,0,0],pdEnt=[0,0,0,0,0,0,0],pdResp=[0,0,0,0,0,0,0];
   F.forEach(c=>{const n=pdDeCarta(c); if(n>=1&&n<=7){const i=n-1;
-    pdN[i]++; pdMonto[i]+=montoDe(c); pdUsd[i]+=usdDe(c);
+    pdN[i]++; pdMonto[i]+=montoRiesgo(c); pdUsd[i]+=usdDe(c);
     if(['entregada','respondida'].includes(c.entrega))pdEnt[i]++;
     if(c.entrega==='respondida')pdResp[i]++;}});
   const pdMax=Math.max(1,...pdN);
@@ -1438,15 +1444,15 @@ function viewDashSuper(){
   </div>
 
   <div class="kpis k5">
-    ${kpi('Cartera gestionada',
+    ${kpi('Cartera en riesgo',
         unaMoneda?`<span style="font-size:19px">${monedas[0]}</span> ${corto(montoTotal)}`:`<span style="font-size:19px">US$</span> ${corto(usdTotal)}`,
-        unaMoneda?`saldo de las cuentas con carta`:`consolidado de ${paisArr.length} países`,ICO.doc,'var(--teal)')}
+        `solo cartas de cobro con saldo${unaMoneda?'':' · '+paisArr.length+' países'}`,ICO.doc,'var(--teal)')}
     ${kpi('Riesgo prejurídico',
         unaMoneda?`<span style="font-size:19px">${monedas[0]}</span> ${corto(pd7Monto)}`:`<span style="font-size:19px">US$</span> ${corto(pd7Usd)}`,
         `${pd7Cartas.length} cuentas en PD7`,ICO.auth,'var(--bad)')}
-    ${kpi('Llegó a la representante',`${pct(entreg,total)}<span style="font-size:16px">%</span>`,`${entreg} de ${total} emitidas`,ICO.send,'var(--ok)')}
+    ${kpi('Cuentas cerradas',cerradas,`finiquito o al día · ${pct(cerradas,total)}% del total`,ICO.check,'var(--ok)')}
+    ${kpi('Llegó a la representante',`${pct(entreg,total)}<span style="font-size:16px">%</span>`,`${entreg} de ${total} emitidas`,ICO.send,'var(--sky)')}
     ${kpi('Tasa de respuesta',`${pct(resp,entreg)}<span style="font-size:16px">%</span>`,`${resp} respondieron de ${entreg} entregadas`,ICO.bolt,'var(--warn)')}
-    ${kpi('Pendiente de firma',aprob<total?total-aprob:0,`${aprob} autorizadas de ${total}`,ICO.check,'var(--sky)')}
   </div>
 
   <div class="grid-2">
@@ -1458,7 +1464,7 @@ function viewDashSuper(){
       :`<div style="text-align:center;padding:40px;color:var(--txt-3);font-size:13px">Sin cartas emitidas en esta vista.</div>`}
     </div>
     <div class="panel glass"><div class="panel-h"><div><h3>Cartera por país</h3>
-      <div style="font-size:11.5px;color:var(--txt-3);margin-top:3px">${unaMoneda?'Saldo gestionado':'Consolidado en US$ · usa la tasa de conversión'}</div></div></div>
+      <div style="font-size:11.5px;color:var(--txt-3);margin-top:3px">${unaMoneda?'Saldo por cobrar · solo cartas de cobro':'Solo cartas de cobro con saldo · consolidado en US$ (tasa de conversión)'}</div></div></div>
       ${paisArr.length?`<div class="bars" style="height:210px">${paisArr.map(([iso,p])=>`<div class="bar-col">
         <span class="bar-val" style="font-size:11px">${unaMoneda?simb(iso)+' '+corto(p.monto):'US$ '+corto(p.usd)}</span>
         <div class="bar-track"><div class="bar b1" style="height:${((unaMoneda?p.monto:p.usd)/Math.max(1,(unaMoneda?paisArr[0][1].monto:paisArr[0][1].usd)))*100}%"></div></div>
@@ -1469,7 +1475,7 @@ function viewDashSuper(){
 
   <div class="grid-2">
     <div class="panel glass"><div class="panel-h"><div><h3>Cartera por tramo de mora</h3>
-      <div style="font-size:11.5px;color:var(--txt-3);margin-top:3px">Monto ${unaMoneda?'en '+monedas[0]:'en US$'} y número de cartas · PD1 temprano → PD7 prejurídico</div></div></div>
+      <div style="font-size:11.5px;color:var(--txt-3);margin-top:3px">Monto adeudado ${unaMoneda?'en '+monedas[0]:'en US$'} y número de cartas · PD1 temprano → PD7 prejurídico</div></div></div>
       ${total?`<div class="bars" style="height:215px">${pdN.map((v,i)=>{const val=unaMoneda?pdMonto[i]:pdUsd[i];
         const maxVal=Math.max(1,...(unaMoneda?pdMonto:pdUsd));
         return `<div class="bar-col"><span class="bar-val" style="font-size:10.5px">${unaMoneda?monedas[0]:'US$'} ${corto(val)}</span>
