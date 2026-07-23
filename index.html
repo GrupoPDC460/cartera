@@ -777,12 +777,12 @@ const svg=(p,w=18)=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" 
 
 /* ---------- configuración por país (tabla CT) ---------- */
 let PAISES = {
-  GT:{nombre:'Guatemala',ciudad:'Ciudad de Guatemala',entidad:'Productos Avon de Guatemala, S.A.',moneda:'Q',cod:'502'},
-  SV:{nombre:'El Salvador',ciudad:'Antiguo Cuscatlán',entidad:'Productos Avon, S.A. de C.V.',moneda:'US$',cod:'503'},
-  HD:{nombre:'Honduras',ciudad:'Tegucigalpa',entidad:'Productos Avon, S.A. de C.V.',moneda:'L',cod:'504'},
-  NC:{nombre:'Nicaragua',ciudad:'Managua',entidad:'Productos Avon de Nicaragua, S.A.',moneda:'C$',cod:'505'},
-  PA:{nombre:'Panamá',ciudad:'Ciudad de Panamá',entidad:'Productos Avon, S.A.',moneda:'B/.',cod:'507'},
-  RD:{nombre:'Rep. Dominicana',ciudad:'Santo Domingo',entidad:'Productos Avon, S.A.',moneda:'RD$',cod:'1809'},
+  GT:{nombre:'Guatemala',ciudad:'Ciudad de Guatemala',entidad:'Productos Avon de Guatemala, S.A.',moneda:'Q',cod:'502',tasa:7.80},
+  SV:{nombre:'El Salvador',ciudad:'Antiguo Cuscatlán',entidad:'Productos Avon, S.A. de C.V.',moneda:'US$',cod:'503',tasa:1},
+  HD:{nombre:'Honduras',ciudad:'Tegucigalpa',entidad:'Productos Avon, S.A. de C.V.',moneda:'L',cod:'504',tasa:24.70},
+  NC:{nombre:'Nicaragua',ciudad:'Managua',entidad:'Productos Avon de Nicaragua, S.A.',moneda:'C$',cod:'505',tasa:36.80},
+  PA:{nombre:'Panamá',ciudad:'Ciudad de Panamá',entidad:'Productos Avon, S.A.',moneda:'B/.',cod:'507',tasa:1},
+  RD:{nombre:'Rep. Dominicana',ciudad:'Santo Domingo',entidad:'Productos Avon, S.A.',moneda:'RD$',cod:'1809',tasa:60},
 };
 
 /* ---------- tipos de carta ---------- */
@@ -1049,6 +1049,7 @@ function buildNav(){
     {id:'hist',ic:ICO.hist,t:'Historial'},
     {id:'plantillas',ic:ICO.doc,t:'Plantillas'},
     {id:'firma',ic:ICO.sign,t:'Mi firma'},
+    {id:'tasas',ic:ICO.bolt,t:'Tasa de conversión'},
     ...(STATE.role.delegado?[]:[{id:'users',ic:ICO.user,t:'Personas'}]),
     {id:'ayuda',ic:ICO.bolt,t:'Instrucciones'},
   ] : [
@@ -1071,6 +1072,7 @@ const TITLES={dash:['Panel','Resumen general de la operación'],
   hist:['Historial','Registro completo de cartas emitidas'],
   users:['Personas','Gestores y supervisión · administración de accesos'],
   firma:['Mi firma','Se aplica a todas las cartas que autorices'],
+  tasas:['Tasa de conversión','Unifica la cartera de los 6 países en dólares'],
   recop:['Recopilación','Plantilla de carga y cortes del día'],
   perfil:['Mi perfil','Tu actividad y tus cartas'],
   plantillas:['Plantillas de cartas','Edita el texto · los campos del Excel no cambian'],
@@ -1082,7 +1084,7 @@ function go(v){
   document.getElementById('vTitle').textContent=TITLES[v][0];
   document.getElementById('vCrumb').textContent=TITLES[v][1];
   const el=document.getElementById('view'); el.classList.remove('fade');void el.offsetWidth;el.classList.add('fade');
-  ({dash:viewDash,upload:viewUpload,gen:viewGen,bloqueo:viewBloqueadas,auth:viewAuth,hist:viewHist,users:viewUsers,firma:viewFirma,recop:viewRecop,perfil:viewPerfil,plantillas:viewPlantillas,ayuda:viewAyuda}[v])();
+  ({dash:viewDash,upload:viewUpload,gen:viewGen,bloqueo:viewBloqueadas,auth:viewAuth,hist:viewHist,users:viewUsers,firma:viewFirma,tasas:viewTasas,recop:viewRecop,perfil:viewPerfil,plantillas:viewPlantillas,ayuda:viewAyuda}[v])();
 }
 
 /* ============ INSTRUCCIONES DE USO ============ */
@@ -1146,7 +1148,15 @@ function viewAyuda(){
 
 /* ============ DASHBOARD ============ */
 /* ============ DASHBOARD SUPERVISIÓN · 6 gráficas + filtros ============ */
-let DF={pais:'todos',gestor:'todos'};
+let DF={pais:'todos',gestor:'todos',anio:'todos',periodo:'todo'};
+function enPeriodo(f){
+  if(!f) return DF.anio==='todos'&&DF.periodo==='todo';
+  const y=String(f).slice(0,4), m=String(f).slice(5,7);
+  if(DF.anio!=='todos'&&y!==DF.anio) return false;
+  if(DF.periodo==='todo') return true;
+  if(DF.periodo.startsWith('T')){ const t=+DF.periodo.slice(1); const mm=+m; return mm>=(t-1)*3+1&&mm<=t*3; }
+  return m===DF.periodo;
+}
 function pdDeCarta(c){
   const r=c.snapshot&&c.snapshot.rep;
   if(r&&(typeof r.inact==='number'||(r.inact!=null&&!isNaN(+r.inact)))) return +r.inact;
@@ -1156,7 +1166,56 @@ function lunesDe(f){ if(!f)return null; const d=new Date(f+'T00:00:00'); if(isNa
 function cartasDF(){
   return CARTAS.filter(c=>
     (DF.pais==='todos'||c.pais===DF.pais) &&
-    (DF.gestor==='todos'||(c.gestor||'').trim()===DF.gestor));
+    (DF.gestor==='todos'||(c.gestor||'').trim()===DF.gestor) &&
+    enPeriodo(c.fecha));
+}
+function viewTasas(){
+  const isos=Object.keys(PAISES);
+  document.getElementById('view').innerHTML=`
+  <div style="margin-bottom:14px;padding:13px 16px;border-radius:12px;background:rgba(45,212,191,.06);border:1px solid rgba(45,212,191,.16);font-size:12.5px;color:var(--txt-2);line-height:1.6">
+    ${svg(ICO.bolt,14)} La tasa indica <b>cuántas unidades locales equivalen a US$ 1</b> (ej. Guatemala 7.80 → Q 7.80 = US$ 1).
+    Con esto el Panel puede consolidar la cartera de los 6 países en <b>una sola moneda</b> para reportes de gerencia.
+    El Salvador y Panamá van en <b>1.00</b> (operan en dólar / paridad).</div>
+  <div class="panel glass">
+    <div class="panel-h"><div><h3>Tasa de conversión a dólar</h3>
+      <div style="font-size:12px;color:var(--txt-3);margin-top:3px">Actualízala cuando cambie el tipo de cambio · aplica a todos los reportes</div></div>
+      <button class="btn primary" onclick="guardarTasas()">${svg(ICO.check)} Guardar tasas</button></div>
+    <div class="tbl-wrap"><table class="tbl">
+      <thead><tr><th>País</th><th>Moneda</th><th style="width:200px">Unidades por US$ 1</th><th>Equivalencia</th></tr></thead>
+      <tbody>${isos.map(iso=>{const p=PAISES[iso];const t=p.tasa!=null?p.tasa:1;
+        return `<tr>
+        <td><div class="flag"><span class="fc">${iso}</span>${p.nombre}</div></td>
+        <td><span class="pd-chip pd-A">${p.moneda}</span></td>
+        <td><input class="input" id="tasa_${iso}" type="number" step="0.0001" min="0.0001" value="${t}"
+              style="width:150px;font-family:'JetBrains Mono'" oninput="previewTasa('${iso}')"></td>
+        <td><span id="eq_${iso}" style="font-size:12.5px;color:var(--txt-3)">${p.moneda} ${t} = US$ 1</span></td>
+      </tr>`;}).join('')}</tbody>
+    </table></div>
+    <div style="margin-top:14px;font-size:11.5px;color:var(--txt-3);line-height:1.6">
+      Ejemplo: una cartera de ${PAISES.GT?PAISES.GT.moneda:'Q'} 20,000 con tasa ${PAISES.GT?(PAISES.GT.tasa||7.8):7.8} equivale a
+      <b style="color:var(--teal)">US$ ${(20000/((PAISES.GT&&PAISES.GT.tasa)||7.8)).toLocaleString('es-GT',{maximumFractionDigits:0})}</b>.
+    </div>
+  </div>`;
+}
+function previewTasa(iso){
+  const v=parseFloat(document.getElementById('tasa_'+iso).value)||0;
+  const el=document.getElementById('eq_'+iso); if(el) el.textContent=`${PAISES[iso].moneda} ${v} = US$ 1`;
+}
+async function guardarTasas(){
+  const cambios=[];
+  Object.keys(PAISES).forEach(iso=>{
+    const el=document.getElementById('tasa_'+iso); if(!el)return;
+    const v=parseFloat(el.value); if(!(v>0)) return;
+    PAISES[iso].tasa=v; cambios.push({iso,v});
+  });
+  if(!cambios.length){toast('info','Revisa las tasas · deben ser mayores a 0');return;}
+  if(SB_OK&&sb){
+    try{
+      for(const c of cambios){ await sb.from('cartera_config_paises').update({tasa_usd:c.v}).eq('iso',c.iso); }
+      toast('ok',`Tasas actualizadas · ${cambios.length} países`);
+    }catch(e){ toast('info','Guardadas en pantalla; revisa la conexión'); }
+  } else toast('info','Sin conexión · guardadas solo en esta sesión');
+  viewTasas();
 }
 function viewDashSuper(){
   // Las cartas RECHAZADAS no son trabajo emitido: no cuentan en ninguna métrica.
@@ -1168,6 +1227,8 @@ function viewDashSuper(){
   const resp=F.filter(c=>c.entrega==='respondida').length;
   const pct=(n,d)=>d?Math.round(n/d*100):0;
   const montoDe=c=>{const r=c.snapshot&&c.snapshot.rep;return r?(parseFloat(r.balance)||0):0;};
+  const tasaDe=iso=>{const t=(PAISES[iso]||{}).tasa; return (t&&t>0)?t:1;};
+  const usdDe=c=>montoDe(c)/tasaDe(c.pais);   // consolidación en dólares
   const fmt=v=>Math.round(v).toLocaleString('es-GT');
   const corto=v=>{const a=Math.abs(v);
     if(a>=1e6) return (v/1e6).toFixed(1).replace('.0','')+'M';
@@ -1193,17 +1254,19 @@ function viewDashSuper(){
   /* --- cartera por país (cada país en SU moneda; sumar monedas distintas no tiene sentido) --- */
   const pais={};
   F.forEach(c=>{const iso=c.pais||'—';
-    const p=pais[iso]=pais[iso]||{n:0,monto:0,pd7:0,pd7monto:0,entreg:0,resp:0};
-    p.n++; p.monto+=montoDe(c);
+    const p=pais[iso]=pais[iso]||{n:0,monto:0,usd:0,pd7:0,pd7monto:0,entreg:0,resp:0};
+    p.n++; p.monto+=montoDe(c); p.usd+=usdDe(c);
     if(pdDeCarta(c)===7){p.pd7++;p.pd7monto+=montoDe(c);}
     if(['entregada','respondida'].includes(c.entrega))p.entreg++;
     if(c.entrega==='respondida')p.resp++;});
-  const paisArr=Object.entries(pais).sort((a,b)=>b[1].monto-a[1].monto);
+  const paisArr=Object.entries(pais).sort((a,b)=>b[1].usd-a[1].usd);
   const monedas=[...new Set(Object.keys(pais).map(iso=>(PAISES[iso]||{}).moneda).filter(Boolean))];
   const unaMoneda=monedas.length===1;
   const montoTotal=paisArr.reduce((a,[,p])=>a+p.monto,0);
+  const usdTotal=paisArr.reduce((a,[,p])=>a+p.usd,0);
   const pd7Cartas=F.filter(c=>pdDeCarta(c)===7);
   const pd7Monto=pd7Cartas.reduce((a,c)=>a+montoDe(c),0);
+  const pd7Usd=pd7Cartas.reduce((a,c)=>a+usdDe(c),0);
 
   /* --- embudo con conversión PASO A PASO (dónde se cae el flujo) --- */
   const funnel=[
@@ -1214,9 +1277,9 @@ function viewDashSuper(){
     ['Con respuesta',resp,entreg,'var(--warn)']];
 
   /* --- tramos: volumen, dinero y EFECTIVIDAD (qué tramo responde) --- */
-  const pdN=[0,0,0,0,0,0,0],pdMonto=[0,0,0,0,0,0,0],pdEnt=[0,0,0,0,0,0,0],pdResp=[0,0,0,0,0,0,0];
+  const pdN=[0,0,0,0,0,0,0],pdMonto=[0,0,0,0,0,0,0],pdUsd=[0,0,0,0,0,0,0],pdEnt=[0,0,0,0,0,0,0],pdResp=[0,0,0,0,0,0,0];
   F.forEach(c=>{const n=pdDeCarta(c); if(n>=1&&n<=7){const i=n-1;
-    pdN[i]++; pdMonto[i]+=montoDe(c);
+    pdN[i]++; pdMonto[i]+=montoDe(c); pdUsd[i]+=usdDe(c);
     if(['entregada','respondida'].includes(c.entrega))pdEnt[i]++;
     if(c.entrega==='respondida')pdResp[i]++;}});
   const pdMax=Math.max(1,...pdN);
@@ -1245,22 +1308,30 @@ function viewDashSuper(){
   const paisOpts=['todos',...Object.keys(PAISES)].map(k=>`<option value="${k}" ${DF.pais===k?'selected':''}>${k==='todos'?'Todos los países':(PAISES[k]?PAISES[k].nombre:k)}</option>`).join('');
   const gestOpts=['todos',...GESTORES.map(g=>g.nombre)].map(n=>`<option value="${n}" ${DF.gestor===n?'selected':''}>${n==='todos'?'Todos los gestores':n.split(' ').slice(0,3).join(' ')}</option>`).join('');
   const simb=iso=>(PAISES[iso]||{}).moneda||'';
+  const anios=[...new Set(CARTAS.map(c=>String(c.fecha||'').slice(0,4)).filter(a=>a.length===4))].sort().reverse();
+  const anioOpts=['todos',...anios].map(a=>`<option value="${a}" ${DF.anio===a?'selected':''}>${a==='todos'?'Todos':a}</option>`).join('');
+  const MESES=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const perOpts=[`<option value="todo" ${DF.periodo==='todo'?'selected':''}>Todo el año</option>`,
+    ...['T1','T2','T3','T4'].map((t,i)=>`<option value="${t}" ${DF.periodo===t?'selected':''}>${t} · ${MESES[i*3].slice(0,3)}-${MESES[i*3+2].slice(0,3)}</option>`),
+    ...MESES.map((mn,i)=>{const mv=String(i+1).padStart(2,'0');return `<option value="${mv}" ${DF.periodo===mv?'selected':''}>${mn}</option>`;})].join('');
 
   document.getElementById('view').innerHTML=`
   <div class="toolbar">
     <div class="field"><label>País</label><select class="select" onchange="DF.pais=this.value;viewDashSuper()">${paisOpts}</select></div>
     <div class="field"><label>Gestor</label><select class="select" style="min-width:200px" onchange="DF.gestor=this.value;viewDashSuper()">${gestOpts}</select></div>
-    ${(DF.pais!=='todos'||DF.gestor!=='todos')?`<div class="field"><label>&nbsp;</label><button class="btn ghost" onclick="DF={pais:'todos',gestor:'todos'};viewDashSuper()">Ver todo</button></div>`:''}
+    <div class="field"><label>Año</label><select class="select" style="min-width:100px" onchange="DF.anio=this.value;viewDashSuper()">${anioOpts}</select></div>
+    <div class="field"><label>Período</label><select class="select" style="min-width:150px" onchange="DF.periodo=this.value;viewDashSuper()">${perOpts}</select></div>
+    ${(DF.pais!=='todos'||DF.gestor!=='todos'||DF.anio!=='todos'||DF.periodo!=='todo')?`<div class="field"><label>&nbsp;</label><button class="btn ghost" onclick="DF={pais:'todos',gestor:'todos',anio:'todos',periodo:'todo'};viewDashSuper()">Ver todo</button></div>`:''}
     <div style="flex:1"></div>
     <div class="field"><label>&nbsp;</label><span class="pill ok">${total} cartas emitidas en vista</span></div>
   </div>
 
   <div class="kpis k5">
     ${kpi('Cartera gestionada',
-        unaMoneda?`<span style="font-size:19px">${monedas[0]}</span> ${fmt(montoTotal)}`:`${paisArr.length}<span style="font-size:15px"> países</span>`,
-        unaMoneda?`saldo de las cuentas con carta`:`monedas distintas · ver desglose abajo`,ICO.doc,'var(--teal)')}
+        unaMoneda?`<span style="font-size:19px">${monedas[0]}</span> ${corto(montoTotal)}`:`<span style="font-size:19px">US$</span> ${corto(usdTotal)}`,
+        unaMoneda?`saldo de las cuentas con carta`:`consolidado de ${paisArr.length} países`,ICO.doc,'var(--teal)')}
     ${kpi('Riesgo prejurídico',
-        unaMoneda?`<span style="font-size:19px">${monedas[0]}</span> ${fmt(pd7Monto)}`:pd7Cartas.length,
+        unaMoneda?`<span style="font-size:19px">${monedas[0]}</span> ${corto(pd7Monto)}`:`<span style="font-size:19px">US$</span> ${corto(pd7Usd)}`,
         `${pd7Cartas.length} cuentas en PD7`,ICO.auth,'var(--bad)')}
     ${kpi('Llegó a la representante',`${pct(entreg,total)}<span style="font-size:16px">%</span>`,`${entreg} de ${total} emitidas`,ICO.send,'var(--ok)')}
     ${kpi('Tasa de respuesta',`${pct(resp,entreg)}<span style="font-size:16px">%</span>`,`${resp} respondieron de ${entreg} entregadas`,ICO.bolt,'var(--warn)')}
@@ -1276,20 +1347,23 @@ function viewDashSuper(){
       :`<div style="text-align:center;padding:40px;color:var(--txt-3);font-size:13px">Sin cartas emitidas en esta vista.</div>`}
     </div>
     <div class="panel glass"><div class="panel-h"><div><h3>Cartera por país</h3>
-      <div style="font-size:11.5px;color:var(--txt-3);margin-top:3px">Saldo gestionado · cada país en su moneda (las alturas no se comparan entre monedas)</div></div></div>
+      <div style="font-size:11.5px;color:var(--txt-3);margin-top:3px">${unaMoneda?'Saldo gestionado':'Consolidado en US$ · usa la tasa de conversión'}</div></div></div>
       ${paisArr.length?`<div class="bars" style="height:210px">${paisArr.map(([iso,p])=>`<div class="bar-col">
-        <span class="bar-val" style="font-size:11px">${simb(iso)} ${corto(p.monto)}</span>
-        <div class="bar-track"><div class="bar b1" style="height:${(p.monto/Math.max(1,paisArr[0][1].monto))*100}%"></div></div>
-        <span class="bar-lab">${iso}<span style="display:block;color:var(--txt-3);font-size:9.5px">${p.n} cartas</span></span></div>`).join('')}</div>`
+        <span class="bar-val" style="font-size:11px">${unaMoneda?simb(iso)+' '+corto(p.monto):'US$ '+corto(p.usd)}</span>
+        <div class="bar-track"><div class="bar b1" style="height:${((unaMoneda?p.monto:p.usd)/Math.max(1,(unaMoneda?paisArr[0][1].monto:paisArr[0][1].usd)))*100}%"></div></div>
+        <span class="bar-lab">${iso}<span style="display:block;color:var(--txt-3);font-size:9.5px">${unaMoneda?p.n+' cartas':simb(iso)+' '+corto(p.monto)}</span></span></div>`).join('')}</div>`
       :`<div style="text-align:center;padding:40px;color:var(--txt-3);font-size:13px">Sin datos por país.</div>`}
     </div>
   </div>
 
   <div class="grid-2">
-    <div class="panel glass"><div class="panel-h"><div><h3>Volumen por tramo de mora</h3>
-      <div style="font-size:11.5px;color:var(--txt-3);margin-top:3px">Dónde está concentrada la cartera (PD1 temprano → PD7 prejurídico)</div></div></div>
-      ${total?`<div class="bars">${pdN.map((v,i)=>`<div class="bar-col"><span class="bar-val">${v}</span>
-        <div class="bar-track"><div class="bar" style="height:${(v/pdMax)*100}%;background:${pdCol(i)}"></div></div><span class="bar-lab">PD${i+1}</span></div>`).join('')}</div>`
+    <div class="panel glass"><div class="panel-h"><div><h3>Cartera por tramo de mora</h3>
+      <div style="font-size:11.5px;color:var(--txt-3);margin-top:3px">Monto ${unaMoneda?'en '+monedas[0]:'en US$'} y número de cartas · PD1 temprano → PD7 prejurídico</div></div></div>
+      ${total?`<div class="bars" style="height:215px">${pdN.map((v,i)=>{const val=unaMoneda?pdMonto[i]:pdUsd[i];
+        const maxVal=Math.max(1,...(unaMoneda?pdMonto:pdUsd));
+        return `<div class="bar-col"><span class="bar-val" style="font-size:10.5px">${unaMoneda?monedas[0]:'US$'} ${corto(val)}</span>
+        <div class="bar-track"><div class="bar" style="height:${(val/maxVal)*100}%;background:${pdCol(i)}"></div></div>
+        <span class="bar-lab">PD${i+1}<span style="display:block;color:var(--txt-3);font-size:9.5px">${v} cartas</span></span></div>`;}).join('')}</div>`
       :`<div style="text-align:center;padding:40px;color:var(--txt-3);font-size:13px">Sin datos.</div>`}
     </div>
     <div class="panel glass"><div class="panel-h"><div><h3>Efectividad por tramo</h3>
@@ -3317,7 +3391,7 @@ async function initSupabase(){
       sb.from('cartera_plantillas').select('*')
     ]),8000);
     if(cp.error) throw cp.error; if(us.error) throw us.error; if(pl.error) throw pl.error;
-    if(cp.data&&cp.data.length){const np={};cp.data.forEach(r=>{np[r.iso]={nombre:r.nombre,ciudad:r.ciudad_emision,entidad:r.razon_social,moneda:r.moneda,cod:r.cod_area};});PAISES=np;}
+    if(cp.data&&cp.data.length){const np={};cp.data.forEach(r=>{np[r.iso]={nombre:r.nombre,ciudad:r.ciudad_emision,entidad:r.razon_social,moneda:r.moneda,cod:r.cod_area,tasa:(r.tasa_usd!=null?+r.tasa_usd:1)};});PAISES=np;}
     if(us.data&&us.data.length){ aplicarUsuarios(us.data); }
     if(pl.data&&pl.data.length){pl.data.forEach(r=>{if(r.texto)PLANTILLAS[r.clave]=r.texto;});}
     SB_OK=true; SB_MSG='Conectado a Supabase';
