@@ -967,6 +967,7 @@ async function doLogin(id){
     if(!g){toast('info','Selecciona tu usuario');return;}
     if(g.activo===false){toast('info','Usuario inactivo · contacta a supervisión');return;}
     role={id:'gestor',nombre:'Gestor de Cobros',user:g.nombre,av:iniciales(g.nombre),cod:g.cod};
+    if(g.delegado){ role.id='super'; role.delegado=true; role.nombre='Supervisor de Cobros (delegado)'; }  // gestor delegado = supervisor temporal
     cred={email:g.email,pass:(document.getElementById('loginKey')?.value||'').trim()};
   }else{
     const nm=document.getElementById('loginUser').value, s=SUPERVISION.find(x=>x.nombre===nm);
@@ -1042,7 +1043,7 @@ function buildNav(){
     {id:'hist',ic:ICO.hist,t:'Historial'},
     {id:'plantillas',ic:ICO.doc,t:'Plantillas'},
     {id:'firma',ic:ICO.sign,t:'Mi firma'},
-    {id:'users',ic:ICO.user,t:'Personas'},
+    ...(STATE.role.delegado?[]:[{id:'users',ic:ICO.user,t:'Personas'}]),
     {id:'ayuda',ic:ICO.bolt,t:'Instrucciones'},
   ] : [
     {id:'perfil',ic:ICO.dash,t:'Mi panel'},
@@ -2993,13 +2994,25 @@ function transitoPanel(){
 }
 
 /* ============ DELEGACIÓN ============ */
-function delegarCarga(){
-  const sel=document.getElementById('delGestor'); if(!sel)return;
-  STATE.delegado=sel.value;
-  toast('ok',`Carga de base delegada a ${sel.value.split(' ')[0]} ${sel.value.split(' ')[1]}`);
+async function delegarCarga(){
+  const sel=document.getElementById('delGestor'); if(!sel||!sel.value)return;
+  const g=GESTORES.find(x=>x.nombre===sel.value); if(!g){toast('info','Selecciona un gestor');return;}
+  if(!confirm(`Delegar a ${g.nombre.split(' ').slice(0,2).join(' ')} como SUPERVISOR TEMPORAL.\n\nPodrá cargar base, generar y AUTORIZAR (firmar) cartas hasta que le quites la delegación.\n\n¿Continuar?`)) return;
+  if(SB_OK&&sb){
+    try{
+      await sb.from('cartera_usuarios').update({delegado:false}).eq('rol','gestor');   // solo un delegado a la vez
+      await sb.from('cartera_usuarios').update({delegado:true}).eq('nombre',g.nombre);
+      await recargarUsuarios();
+    }catch(e){ toast('bad','No se pudo guardar la delegación'); return; }
+  }
+  STATE.delegado=g.nombre;
+  toast('ok',`Supervisor temporal: ${g.nombre.split(' ').slice(0,2).join(' ')} · debe volver a entrar`);
   viewUsers();
 }
-function quitarDelegacion(){STATE.delegado=null;toast('info','Delegación retirada');viewUsers();}
+async function quitarDelegacion(){
+  if(SB_OK&&sb){ try{ await sb.from('cartera_usuarios').update({delegado:false}).eq('rol','gestor'); await recargarUsuarios(); }catch(e){} }
+  STATE.delegado=null; toast('info','Delegación retirada · vuelve a ser gestor'); viewUsers();
+}
 function delegPanel(){
   return `<div class="panel glass" style="margin-bottom:14px">
     <div class="panel-h"><div><h3>Delegación de carga de base</h3>
@@ -3083,9 +3096,10 @@ function toast(type,msg){
 let userFilter='todos';
 function aplicarUsuarios(rows){
   SUPERVISION=rows.filter(u=>u.rol==='supervision').map(u=>({cod:u.codigo_empleado||'—',nombre:u.nombre,cargo:u.cargo,email:u.email||null,activo:u.activo!==false}));
-  GESTORES=rows.filter(u=>u.rol==='gestor').map(u=>({cod:u.codigo_empleado,nombre:u.nombre,email:u.email||null,activo:u.activo!==false}));
-  USUARIOS=rows.map(u=>({id:u.id,email:u.email||null,cod:u.codigo_empleado||'—',nombre:u.nombre,rol:u.rol==='supervision'?'super':'gestor',cargo:u.cargo,av:iniciales(u.nombre),cartera:u.cartera_pais||'Sin asignar',activo:u.activo!==false}));
+  GESTORES=rows.filter(u=>u.rol==='gestor').map(u=>({cod:u.codigo_empleado,nombre:u.nombre,email:u.email||null,activo:u.activo!==false,delegado:u.delegado===true}));
+  USUARIOS=rows.map(u=>({id:u.id,email:u.email||null,cod:u.codigo_empleado||'—',nombre:u.nombre,rol:u.rol==='supervision'?'super':'gestor',cargo:u.cargo,activo:u.activo!==false,delegado:u.delegado===true,av:iniciales(u.nombre),cartera:u.cartera_pais||'Sin asignar',activo:u.activo!==false}));
   ROLES[0].who=GESTORES.length+' gestores'; if(GESTORES[0])ROLES[0].user=GESTORES[0].nombre;
+  try{ const _del=GESTORES.find(g=>g.delegado); STATE.delegado=_del?_del.nombre:null; }catch(e){}
 }
 async function recargarUsuarios(){
   if(!SB_OK||!sb) return;
