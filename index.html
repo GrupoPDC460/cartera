@@ -1289,6 +1289,13 @@ function previewTasa(iso){
   const v=parseFloat(document.getElementById('tasa_'+iso).value)||0;
   const el=document.getElementById('eq_'+iso); if(el) el.textContent=`${PAISES[iso].moneda} ${v} = US$ 1`;
 }
+/* Si la base no guardó la tasa (permisos), usamos el último valor puesto en este navegador */
+function restaurarTasasLocales(){
+  try{
+    const g=JSON.parse(localStorage.getItem('cartera_tasas')||'null'); if(!g)return;
+    Object.keys(g).forEach(iso=>{ if(PAISES[iso]&&g[iso]>0) PAISES[iso].tasa=+g[iso]; });
+  }catch(e){}
+}
 async function guardarTasas(){
   const cambios=[];
   Object.keys(PAISES).forEach(iso=>{
@@ -1297,12 +1304,28 @@ async function guardarTasas(){
     PAISES[iso].tasa=v; cambios.push({iso,v});
   });
   if(!cambios.length){toast('info','Revisa las tasas · deben ser mayores a 0');return;}
-  if(SB_OK&&sb){
+  // respaldo local: aunque falle la base, la tasa sobrevive al recargar
+  try{ const g={}; Object.keys(PAISES).forEach(i=>g[i]=PAISES[i].tasa); localStorage.setItem('cartera_tasas',JSON.stringify(g)); }catch(e){}
+  if(!(SB_OK&&sb)){ toast('info','Sin conexión · guardadas solo en este navegador'); viewTasas(); return; }
+  let ok=0; const fallos=[];
+  for(const c of cambios){
     try{
-      for(const c of cambios){ await sb.from('cartera_config_paises').update({tasa_usd:c.v}).eq('iso',c.iso); }
-      toast('ok',`Tasas actualizadas · ${cambios.length} países`);
-    }catch(e){ toast('info','Guardadas en pantalla; revisa la conexión'); }
-  } else toast('info','Sin conexión · guardadas solo en esta sesión');
+      // .select() nos dice CUÁNTAS filas se actualizaron de verdad
+      const {data,error}=await sb.from('cartera_config_paises').update({tasa_usd:c.v}).eq('iso',c.iso).select('iso');
+      if(error){ fallos.push(c.iso+': '+(error.message||'rechazado')); continue; }
+      if(data&&data.length){ ok++; continue; }
+      // no existía la fila: la creamos
+      const ins=await sb.from('cartera_config_paises').insert({iso:c.iso,tasa_usd:c.v}).select('iso');
+      if(ins.error) fallos.push(c.iso+': '+(ins.error.message||'no se pudo crear'));
+      else ok++;
+    }catch(e){ fallos.push(c.iso+': '+(e&&e.message?e.message:'error')); }
+  }
+  if(fallos.length){
+    console.warn('Tasas no guardadas:',fallos);
+    toast('bad',`No se guardaron ${fallos.length} en la base (sí en este navegador) · ${fallos[0]}`);
+  } else {
+    toast('ok',`Tasas guardadas · ${ok} país(es)`);
+  }
   viewTasas();
 }
 function viewDashSuper(){
@@ -3480,6 +3503,7 @@ async function initSupabase(){
     ]),8000);
     if(cp.error) throw cp.error; if(us.error) throw us.error; if(pl.error) throw pl.error;
     if(cp.data&&cp.data.length){const np={};cp.data.forEach(r=>{np[r.iso]={nombre:r.nombre,ciudad:r.ciudad_emision,entidad:r.razon_social,moneda:r.moneda,cod:r.cod_area,tasa:(r.tasa_usd!=null?+r.tasa_usd:1)};});PAISES=np;}
+    restaurarTasasLocales();
     if(us.data&&us.data.length){ aplicarUsuarios(us.data); }
     if(pl.data&&pl.data.length){pl.data.forEach(r=>{if(r.texto)PLANTILLAS[r.clave]=r.texto;});}
     SB_OK=true; SB_MSG='Conectado a Supabase';
