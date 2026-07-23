@@ -23,6 +23,50 @@
   --accent-v:linear-gradient(135deg,#6366F1,#A855F7);
 }
 *{box-sizing:border-box;margin:0;padding:0}
+
+/* ============ MODO CLARO (fondo blanco con color) ============ */
+html[data-claro]{
+  --ink:#EEF3FA; --ink-2:#E4ECF7; --ink-3:#FFFFFF;
+  --txt:#152239; --txt-2:#4B5B77; --txt-3:#8496B0;
+  --ok:#059669; --warn:#B45309; --bad:#E11D48;
+  --glass:linear-gradient(160deg,rgba(255,255,255,.95),rgba(255,255,255,.78));
+  --glass-2:linear-gradient(160deg,rgba(255,255,255,1),rgba(246,250,255,.9));
+  --stroke:rgba(21,34,57,.12);
+  --stroke-bright:rgba(21,34,57,.26);
+  --shadow:0 10px 34px rgba(21,34,57,.10);
+}
+html[data-claro] .glass{
+  box-shadow:var(--shadow), inset 0 1px 0 rgba(255,255,255,.9);
+}
+html[data-claro] .glass::after{
+  background:linear-gradient(135deg,rgba(255,255,255,.7),transparent 45%);mix-blend-mode:normal;opacity:.5}
+html[data-claro] .aurora{opacity:.30}
+/* menú en claro: relieve con luz arriba y sombra abajo */
+html[data-claro] .nav-item:hover{background:rgba(21,34,57,.05);border-color:rgba(21,34,57,.09);
+  box-shadow:0 6px 14px -6px rgba(21,34,57,.28)}
+html[data-claro] .nav-item::after{background:linear-gradient(100deg,transparent 22%,rgba(21,34,57,.05) 50%,transparent 78%)}
+html[data-claro] .nav-item.active{
+  background:linear-gradient(180deg,#FFFFFF,#E9F0FA);
+  border-color:rgba(21,34,57,.14);text-shadow:0 1px 0 rgba(255,255,255,.9);
+  box-shadow:
+    inset 0 1.5px 0 rgba(255,255,255,1),
+    inset 0 -1.5px 0 rgba(21,34,57,.16),
+    0 6px 14px -3px rgba(21,34,57,.26),
+    0 2px 4px -1px rgba(21,34,57,.16);}
+html[data-claro] .nav-item.active:hover{box-shadow:
+    inset 0 1.5px 0 rgba(255,255,255,1),
+    inset 0 -1.5px 0 rgba(21,34,57,.16),
+    0 9px 20px -4px rgba(21,34,57,.3),
+    0 2px 5px -1px rgba(21,34,57,.2);}
+html[data-claro] .side-user{background:rgba(21,34,57,.04)}
+html[data-claro] .type-row .tmeter{background:rgba(21,34,57,.08)}
+html[data-claro] .bar-track{background:transparent}
+html[data-claro] .select,html[data-claro] select{color-scheme:light}
+html[data-claro] .select option,html[data-claro] select option,html[data-claro] optgroup{background-color:#fff;color:#152239}
+html[data-claro] .select,html[data-claro] .input{background:rgba(21,34,57,.035)}
+html[data-claro] .btn{background:var(--glass-2)}
+html[data-claro] .theme-item{border-color:rgba(21,34,57,.12)}
+html[data-claro] .tbl tbody tr:hover{background:rgba(21,34,57,.035)}
 html,body{height:100%}
 body{
   font-family:'Inter',system-ui,sans-serif;
@@ -267,8 +311,23 @@ body{
   box-shadow:0 6px 16px -6px rgba(0,0,0,.55);border-color:rgba(255,255,255,.07)}
 .nav-item:hover svg{opacity:1;transform:scale(1.12)}
 .nav-item:active{transform:translateX(4px) scale(.98);transition-duration:.08s}
-.nav-item.active{background:var(--glass-2);border-color:var(--stroke);color:var(--txt);
-  box-shadow:0 8px 22px -8px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.06)}
+.nav-item.active{
+  background:linear-gradient(180deg,rgba(255,255,255,.14),rgba(255,255,255,.045));
+  border-color:rgba(255,255,255,.17);color:var(--txt);transform:translateX(4px);
+  text-shadow:0 1px 0 rgba(0,0,0,.35);
+  box-shadow:
+    inset 0 1.5px 0 rgba(255,255,255,.30),      /* luz que golpea arriba */
+    inset 0 -1.5px 0 rgba(0,0,0,.42),           /* sombra interna abajo */
+    inset 1px 0 0 rgba(255,255,255,.10),
+    0 6px 14px -3px rgba(0,0,0,.6),             /* proyecta sombra: queda "salido" */
+    0 2px 4px -1px rgba(0,0,0,.45);
+}
+.nav-item.active:hover{transform:translateX(5px);
+  box-shadow:
+    inset 0 1.5px 0 rgba(255,255,255,.34),
+    inset 0 -1.5px 0 rgba(0,0,0,.42),
+    0 9px 20px -4px rgba(0,0,0,.65),
+    0 2px 5px -1px rgba(0,0,0,.5);}
 .nav-item.active svg{opacity:1;color:var(--accent);filter:drop-shadow(0 0 7px rgba(45,212,191,.45))}
 .nav-item.active::before{content:"";position:absolute;left:-14px;top:50%;transform:translateY(-50%);
   width:3px;height:20px;border-radius:3px;background:var(--accent);
@@ -675,6 +734,9 @@ const TEMAS={
   oro:{nombre:'Oro rosa',accent:'linear-gradient(135deg,#F5A623,#E8846B)',dot:'linear-gradient(135deg,#F5A623,#E8846B)',teal:'#FBBF24',sky:'#F59E0B'},
   orquidea:{nombre:'Orquídea',accent:'linear-gradient(135deg,#A855F7,#6366F1)',dot:'linear-gradient(135deg,#A855F7,#6366F1)',teal:'#C084FC',sky:'#A855F7'},
   menta:{nombre:'Menta fresca',accent:'linear-gradient(135deg,#34D399,#06B6D4)',dot:'linear-gradient(135deg,#34D399,#06B6D4)',teal:'#34D399',sky:'#06B6D4'},
+  claro:{nombre:'Claro · Aurora',claro:true,accent:'linear-gradient(135deg,#0EA5A0,#0284C7)',dot:'linear-gradient(135deg,#0EA5A0,#0284C7)',teal:'#0D9488',sky:'#0284C7'},
+  claro_rubor:{nombre:'Claro · Rubor Avon',claro:true,accent:'linear-gradient(135deg,#DB2777,#BE185D)',dot:'linear-gradient(135deg,#DB2777,#BE185D)',teal:'#DB2777',sky:'#BE185D'},
+  claro_orquidea:{nombre:'Claro · Orquídea',claro:true,accent:'linear-gradient(135deg,#7C3AED,#4F46E5)',dot:'linear-gradient(135deg,#7C3AED,#4F46E5)',teal:'#7C3AED',sky:'#4F46E5'},
 };
 function claveTema(){ return 'cartera_tema_'+((STATE&&STATE.role&&STATE.role.user)||'anon'); }
 function aplicarTema(id){
@@ -683,6 +745,7 @@ function aplicarTema(id){
   r.style.setProperty('--accent',t.accent);
   r.style.setProperty('--teal',t.teal);
   r.style.setProperty('--sky',t.sky);
+  if(t.claro) r.setAttribute('data-claro','1'); else r.removeAttribute('data-claro');
   try{ sessionStorage.setItem(claveTema(),id); }catch(e){}
 }
 function temaActual(){
@@ -693,15 +756,19 @@ function toggleThemePop(ev){
   const pop=document.getElementById('themePop');
   if(pop.innerHTML){ pop.innerHTML=''; return; }
   const act=temaActual();
+  const fila=([id,t])=>`
+      <div class="theme-item ${id===act?'on':''}" onclick="elegirTema('${id}')">
+        <div class="theme-dot" style="background:${t.dot};${t.claro?'box-shadow:0 0 0 2px #fff inset,0 0 0 1px rgba(0,0,0,.25)':''}"></div>
+        <span>${t.nombre}</span>
+        <svg class="tick" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+      </div>`;
+  const ents=Object.entries(TEMAS);
+  const oscuros=ents.filter(([,t])=>!t.claro), claros=ents.filter(([,t])=>t.claro);
+  const rot=t=>`<div style="font-size:10.5px;font-weight:700;letter-spacing:.6px;color:var(--txt-3);margin:10px 0 6px">${t}</div>`;
   pop.innerHTML=`<div class="theme-pop" onclick="event.stopPropagation()">
     <h4>Personaliza tus colores</h4>
     <div class="sub">Solo cambia tu vista. Se guarda mientras dure tu sesión.</div>
-    <div class="theme-list">${Object.entries(TEMAS).map(([id,t])=>`
-      <div class="theme-item ${id===act?'on':''}" onclick="elegirTema('${id}')">
-        <div class="theme-dot" style="background:${t.dot}"></div>
-        <span>${t.nombre}</span>
-        <svg class="tick" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-      </div>`).join('')}</div>
+    <div class="theme-list">${rot('OSCUROS')}${oscuros.map(fila).join('')}${rot('CLAROS')}${claros.map(fila).join('')}</div>
   </div>`;
 }
 function elegirTema(id){
