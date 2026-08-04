@@ -1645,6 +1645,8 @@ function gestorPanel(){
 
 /* ============ CARGAR DATOS · CONSOLIDACIÓN ============ */
 let RECOP_CACHE=null;
+/* estado del lote de hoy — alimenta el semáforo 🟢 Base / 🟢 Consolidado */
+let LOTE={baseOrigen:'ninguna',baseN:0,pdListo:false,pdOk:0,pdSinMatch:0};
 /* ===== Dueño de cada cuenta = el gestor que la puso en SU recopilación =====
    Una carta pertenece al gestor dueño de la cuenta, aunque la haya generado
    el supervisor por lote. Sin esto, los gestores no ven sus propias cartas. */
@@ -1748,6 +1750,7 @@ function viewUpload(){
       <span style="color:var(--txt-3)">›</span>
       <button class="btn ghost" onclick="fusionarDesdeCache()">${svg(ICO.bolt)} 3 · Fusionar con el de hoy</button>
     </div>
+    <div id="semaforoLote" style="margin-top:14px"></div>
     <p style="font-size:11px;color:var(--txt-3);margin-top:11px;line-height:1.5">Columnas de la base: CODIGO REP · ESTATUS ACTUAL · N. INACTIVIDADES · PAIS · ZONA · SECTOR · NOMBRE_CONSEJERA · FECHA_NOMBRAMIENTO · BALANCE · CEDULA · CAMPANIA_ULTIMA_ORDEN · ID</p>
     <div id="baseSummary"></div>
     <div id="pdSummary"></div>
@@ -1759,7 +1762,45 @@ function viewUpload(){
       <button class="btn ghost sm" style="flex:0;margin-right:8px" onclick="limpiarGeneracion()">${svg(ICO.upload,14)} Limpiar carga actual (re-fusionar)</button>
       <button class="btn no sm" style="flex:0" onclick="resetSistema()">${svg(ICO.block,14)} Reiniciar datos (empezar de 0)</button></div>
   </div>`;
+    renderSemaforo();
   });
+}
+/* --- semáforo del lote: luz verde solo cuando base + consolidado están listos --- */
+function renderSemaforo(){
+  const el=document.getElementById('semaforoLote'); if(!el) return;
+  const baseOk=REPS.length>0, baseN=REPS.length;
+  const porPais={}; REPS.forEach(r=>{const k=r.pais||'—';porPais[k]=(porPais[k]||0)+1;});
+  const paisesTxt=Object.entries(porPais).map(([iso,n])=>`${(PAISES[iso]||{}).nombre||iso} ${n}`).join(' · ');
+  const origenTxt=LOTE.baseOrigen==='archivo'?'✔ cargada hoy desde archivo'
+    :(LOTE.baseOrigen==='nube'?'⚠ traída de la nube · confirma que sea la de HOY':'');
+  const total=LOTE.pdOk+LOTE.pdSinMatch;
+  const ratioMal=total>0?LOTE.pdSinMatch/total:0;
+  const pdMalo=LOTE.pdListo&&ratioMal>0.5;
+
+  let l1c,l1t;
+  if(baseOk){l1c='var(--ok)';l1t=`<b>Base cargada</b> · ${baseN} cuentas${paisesTxt?` · ${paisesTxt}`:''}${origenTxt?`<div style="font-size:11px;color:var(--txt-3);margin-top:2px">${origenTxt}</div>`:''}`;}
+  else{l1c='var(--bad)';l1t='<b>Sin base</b> · usa el <b>paso 1</b> para subir la base del día';}
+
+  let l2c,l2t;
+  if(!LOTE.pdListo){l2c='var(--txt-3)';l2t='<b>Consolidado pendiente</b> · usa el <b>paso 2</b> para subir el PD';}
+  else if(pdMalo){l2c='var(--warn)';l2t=`<b>Casi nada coincidió</b> · ${LOTE.pdOk} casadas / ${LOTE.pdSinMatch} sin coincidencia — ¿cargaste la base de HOY antes de fusionar?`;}
+  else{l2c='var(--ok)';l2t=`<b>Consolidado fusionado</b> · ${LOTE.pdOk} casadas${LOTE.pdSinMatch?` · ${LOTE.pdSinMatch} sin coincidencia`:''}`;}
+
+  let vTxt,vCol,vBg,vBd;
+  if(baseOk&&LOTE.pdListo&&!pdMalo){vTxt='✅ LISTO PARA FUSIONAR / GENERAR';vCol='var(--ok)';vBg='rgba(52,211,153,.10)';vBd='rgba(52,211,153,.35)';}
+  else if(baseOk&&!LOTE.pdListo){vTxt='🔵 Base lista · ahora sube el consolidado (paso 2)';vCol='var(--accent)';vBg='rgba(96,165,250,.10)';vBd='rgba(96,165,250,.30)';}
+  else if(baseOk&&pdMalo){vTxt='⚠️ Revisa la base antes de generar · casi nada casó';vCol='var(--warn)';vBg='rgba(251,191,36,.10)';vBd='rgba(251,191,36,.30)';}
+  else{vTxt='🔴 Empieza por el paso 1: sube la base del día';vCol='var(--bad)';vBg='rgba(251,113,133,.10)';vBd='rgba(251,113,133,.30)';}
+
+  const luz=(color,texto)=>`<div style="display:flex;gap:10px;align-items:flex-start;padding:11px 13px;border-radius:11px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.06)">
+    <span style="width:13px;height:13px;border-radius:50%;background:${color};box-shadow:0 0 10px ${color};flex:0 0 auto;margin-top:2px"></span>
+    <span style="font-size:12.5px;color:var(--txt-2);line-height:1.45">${texto}</span></div>`;
+
+  el.innerHTML=`<div style="display:grid;gap:9px">
+    ${luz(l1c,l1t)}
+    ${luz(l2c,l2t)}
+    <div style="text-align:center;font-weight:700;font-size:13px;padding:10px;border-radius:11px;color:${vCol};background:${vBg};border:1px solid ${vBd}">${vTxt}</div>
+  </div>`;
 }
 /* --- generador de consulta SQL con el formato oficial --- */
 function consolidadoPares(){
@@ -1858,6 +1899,10 @@ function fusionarPD(ev){
     const iT=headers.findIndex(h=>h==='TIPO');
     const pares=rows.slice(1).map(r=>[String(r[iC]||'').trim(),String(r[iP]||'').trim(),String(r[iPD]||'').trim(),iT>=0?String(r[iT]||'').trim():'']);
     const res=aplicarFusionPares(pares);
+    LOTE.pdListo=true; LOTE.pdOk=res.ok; LOTE.pdSinMatch=res.sinMatch;
+    if(REPS.length===0){ toast('bad','No hay base cargada · sube primero la base del día (paso 1)'); }
+    else if((res.ok+res.sinMatch)>0 && res.sinMatch/(res.ok+res.sinMatch)>0.7){ toast('info','⚠ Casi nada coincidió · ¿cargaste la base de HOY antes del consolidado?'); }
+    renderSemaforo();
     document.getElementById('pdSummary').innerHTML=`
       <div style="margin-top:14px;padding:12px;border-radius:10px;background:rgba(52,211,153,.06);border:1px solid rgba(52,211,153,.18);font-size:12.5px;color:var(--txt-2)">
         ${svg(ICO.check,14)} <b style="color:var(--ok)">${res.ok} cuentas actualizadas</b> con su PD real.
@@ -2002,6 +2047,8 @@ async function cargarBaseReal(ev){
       const _byc={}; parsed.forEach(p=>_byc[p.cod]=p); const _keys=Object.keys(_byc);
       if(_keys.length<parsed.length){ parsed.length=0; _keys.forEach(k=>parsed.push(_byc[k])); } // evita duplicados si el archivo trae códigos repetidos
       REPS.length=0; parsed.forEach(p=>REPS.push(p));
+      LOTE.baseOrigen='archivo'; LOTE.baseN=parsed.length; LOTE.pdListo=false; LOTE.pdOk=0; LOTE.pdSinMatch=0;
+      renderSemaforo();
       dbGuardarRepresentantes(parsed).then(r=>{ if(r.ok) toast('ok','Base sincronizada en Supabase · visible para todos'); else if(SB_OK) toast('info','Base local OK · no se sincronizó: '+r.msg); });
     }
     const porPais={}; parsed.forEach(p=>{porPais[p.pais]=(porPais[p.pais]||0)+1;});
@@ -3544,6 +3591,7 @@ async function dbCargarRepresentantes(){
     data.forEach(r=>REPS.push({cod:r.codigo,pais:r.pais,zona:r.zona||'—',nombre:r.nombre||'(sin nombre)',
       estatus:r.estatus||'A',inact:r.pd||0,balance:parseFloat(r.balance)||0,camp:r.campania||'—',
       cedula:r.cedula||'—',prev:[]}));
+    LOTE.baseOrigen='nube'; LOTE.baseN=REPS.length; LOTE.pdListo=false; LOTE.pdOk=0; LOTE.pdSinMatch=0;
     return true;
   }catch(e){return false;}
 }
