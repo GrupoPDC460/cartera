@@ -3345,12 +3345,21 @@ function viewPlantillas(){
     </div>
   </div>`).join('')}`;
 }
-function savePlantilla(k){
-  STATE.plantillas[k]=document.getElementById('pl_'+k).value;
-  if(SB_OK&&sb){
-    sb.from('cartera_plantillas').update({texto:STATE.plantillas[k],actualizado_por:(STATE.role&&STATE.role.user)||'—',actualizado_en:new Date().toISOString()}).eq('clave',k)
-      .then(({error})=>toast(error?'info':'ok', error?('No se pudo guardar en Supabase: '+error.message):'Plantilla guardada en Supabase'));
-  } else toast('ok','Plantilla guardada (local · modo demo)');
+async function savePlantilla(k){
+  const ta=document.getElementById('pl_'+k); if(!ta)return;
+  STATE.plantillas[k]=ta.value;
+  try{ localStorage.setItem('cartera_plantillas',JSON.stringify(STATE.plantillas)); }catch(e){}   // respaldo
+  if(!(SB_OK&&sb)){ toast('info','Guardada en este navegador (sin conexión)'); viewPlantillas(); return; }
+  const fila={clave:k,texto:STATE.plantillas[k],actualizado_por:(STATE.role&&STATE.role.user)||'—',actualizado_en:new Date().toISOString()};
+  try{
+    const {data,error}=await sb.from('cartera_plantillas').update(fila).eq('clave',k).select('clave');
+    if(error){ toast('bad','No se pudo guardar: '+error.message); }
+    else if(data&&data.length){ toast('ok','Plantilla guardada en Supabase'); }
+    else { // no existía la fila para esta plantilla: se crea
+      const ins=await sb.from('cartera_plantillas').insert(fila).select('clave');
+      toast(ins.error?'bad':'ok', ins.error?('No se pudo crear: '+ins.error.message):'Plantilla guardada en Supabase');
+    }
+  }catch(e){ toast('bad','Error al guardar la plantilla'); }
   viewPlantillas();
 }
 function resetPlantilla(k){delete STATE.plantillas[k];toast('info','Plantilla restaurada al texto original');viewPlantillas();}
@@ -3512,6 +3521,7 @@ async function initSupabase(){
     restaurarTasasLocales();
     if(us.data&&us.data.length){ aplicarUsuarios(us.data); }
     if(pl.data&&pl.data.length){pl.data.forEach(r=>{if(r.texto)PLANTILLAS[r.clave]=r.texto;});}
+    try{ const lp=JSON.parse(localStorage.getItem('cartera_plantillas')||'null'); if(lp){STATE.plantillas=Object.assign({},lp,STATE.plantillas);} }catch(e){}
     SB_OK=true; SB_MSG='Conectado a Supabase';
   }catch(e){
     SB_OK=false;
