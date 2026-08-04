@@ -1806,10 +1806,16 @@ function renderSemaforo(){
 function consolidadoPares(){
   return filasConsolidado().map(f=>[f[0],f[1]]);
 }
+/* país canónico para el cruce SQL: resuelve ISO/variantes al nombre en MAYÚSCULA que usa REP_BI */
+function paisCanonSQL(txt){
+  const iso=paisAIso(txt);
+  const M={GT:'GUATEMALA',SV:'EL SALVADOR',HD:'HONDURAS',NC:'NICARAGUA',PA:'PANAMA',RD:'REPUBLICA DOMINICANA'};
+  return (iso&&M[iso])?M[iso]:String(txt||'').trim().toUpperCase();
+}
 function copiarSQL(){
   const pares=consolidadoPares();
   if(!pares.length){toast('info','No hay códigos en el consolidado de hoy');return;}
-  const values=pares.map(([c,p])=>`('${c}','${p}')`).join(', ');
+  const values=pares.map(([c,p])=>`('${String(c).trim()}','${paisCanonSQL(p)}')`).join(', ');
   const sql=`SELECT
     CODIGO_CONSEJERA AS 'CODIGO REP',
     ESTADO_ACTUAL_CONSEJERA AS 'ESTATUS ACTUAL',
@@ -1833,7 +1839,7 @@ WHERE
             ${values}
         ) AS t(CODIGO, PAIS)
         WHERE t.CODIGO = REP_BI.CODIGO_CONSEJERA
-          AND t.PAIS = REP_BI.PAIS
+          AND t.PAIS COLLATE Latin1_General_CI_AI = REP_BI.PAIS COLLATE Latin1_General_CI_AI
     );`;
   const done=()=>toast('ok',`Consulta SQL copiada · ${pares.length} códigos · pégala en SQL Server`);
   if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(sql).then(done).catch(()=>descargarSQLTxt(sql,done));}
