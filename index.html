@@ -1646,7 +1646,8 @@ function gestorPanel(){
 /* ============ CARGAR DATOS · CONSOLIDACIÓN ============ */
 let RECOP_CACHE=null;
 /* estado del lote de hoy — alimenta el semáforo 🟢 Base / 🟢 Consolidado */
-let LOTE={baseOrigen:'ninguna',baseN:0,pdListo:false,pdOk:0,pdSinMatch:0};
+let LOTE={baseOrigen:'ninguna',baseN:0,pdListo:false,pdOk:0,pdSinMatch:0,
+          nubeEstado:'ninguna',enNube:0,nubeMsg:''};
 /* ===== Dueño de cada cuenta = el gestor que la puso en SU recopilación =====
    Una carta pertenece al gestor dueño de la cuenta, aunque la haya generado
    el supervisor por lote. Sin esto, los gestores no ven sus propias cartas. */
@@ -1667,7 +1668,10 @@ function construirDuenos(){
 }
 /* a quién pertenece la carta de esta cuenta */
 function gestorDeCuenta(rep){
-  const d=DUENO_CUENTA[claveCuenta(rep.cod,rep.pais)];
+  const k=claveCuenta(rep.cod,rep.pais);
+  // 1) asignación manual (manda sobre todo)
+  if(typeof ASIG_MANUAL!=='undefined'&&ASIG_MANUAL[k]) return ASIG_MANUAL[k];
+  const d=DUENO_CUENTA[k];
   if(d) return d;
   // sin recopilación conocida: la firma quien la genera
   return STATE.role.user;
@@ -1761,8 +1765,10 @@ function viewUpload(){
       <div style="font-size:12px;color:var(--txt-3);margin-top:3px">Borra cartas, base, recopilaciones y reinicia la numeración · irreversible</div></div>
       <button class="btn ghost sm" style="flex:0;margin-right:8px" onclick="limpiarGeneracion()">${svg(ICO.upload,14)} Limpiar carga actual (re-fusionar)</button>
       <button class="btn no sm" style="flex:0" onclick="resetSistema()">${svg(ICO.block,14)} Reiniciar datos (empezar de 0)</button></div>
-  </div>`;
+  </div>
+  <div id="asigPanel"></div>`;
     renderSemaforo();
+    dbCargarAsignaciones().then(()=>{ if(REPS.length) viewAsignar(); });
   });
 }
 /* --- semáforo del lote: luz verde solo cuando base + consolidado están listos --- */
@@ -1782,12 +1788,21 @@ function renderSemaforo(){
   else{l1c='var(--bad)';l1t='<b>Sin base</b> · usa el <b>paso 1</b> para subir la base del día';}
 
   let l2c,l2t;
-  if(!LOTE.pdListo){l2c='var(--txt-3)';l2t='<b>Consolidado pendiente</b> · usa el <b>paso 2</b> para subir el PD';}
-  else if(pdMalo){l2c='var(--warn)';l2t=`<b>Casi nada coincidió</b> · ${LOTE.pdOk} casadas / ${LOTE.pdSinMatch} sin coincidencia — ¿cargaste la base de HOY antes de fusionar?`;}
-  else{l2c='var(--ok)';l2t=`<b>Consolidado fusionado</b> · ${LOTE.pdOk} casadas${LOTE.pdSinMatch?` · ${LOTE.pdSinMatch} sin coincidencia`:''}`;}
+  if(LOTE.nubeEstado==='ok'){l2c='var(--ok)';l2t=`<b>Guardada en línea</b> · ${LOTE.enNube} cuentas verificadas en la nube`;}
+  else if(LOTE.nubeEstado==='guardando'){l2c='var(--accent)';l2t='<b>Guardando en la nube…</b>';}
+  else if(LOTE.nubeEstado==='error'){l2c='var(--bad)';l2t=`<b>NO se guardó en línea</b> · ${LOTE.nubeMsg}<div style="font-size:11px;color:var(--txt-3);margin-top:2px">La base está solo en este navegador. Vuelve a subirla o revisa la conexión.</div>`;}
+  else if(LOTE.baseOrigen==='nube'){l2c='var(--ok)';l2t=`<b>Leída de la nube</b> · ${REPS.length} cuentas`;}
+  else{l2c='var(--txt-3)';l2t='<b>Sin guardar en línea</b> · sube la base en el paso 1';}
 
+  let l3c,l3t;
+  if(!LOTE.pdListo){l3c='var(--txt-3)';l3t='<b>Consolidado pendiente</b> · usa el <b>paso 2</b> para subir el PD';}
+  else if(pdMalo){l3c='var(--warn)';l3t=`<b>Casi nada coincidió</b> · ${LOTE.pdOk} casadas / ${LOTE.pdSinMatch} sin coincidencia — ¿cargaste la base de HOY antes de fusionar?`;}
+  else{l3c='var(--ok)';l3t=`<b>Consolidado fusionado</b> · ${LOTE.pdOk} casadas${LOTE.pdSinMatch?` · ${LOTE.pdSinMatch} sin coincidencia`:''}`;}
+
+  const nubeMal=LOTE.nubeEstado==='error';
   let vTxt,vCol,vBg,vBd;
-  if(baseOk&&LOTE.pdListo&&!pdMalo){vTxt='✅ LISTO PARA FUSIONAR / GENERAR';vCol='var(--ok)';vBg='rgba(52,211,153,.10)';vBd='rgba(52,211,153,.35)';}
+  if(nubeMal){vTxt='🔴 La base NO está en línea · vuelve a subirla antes de generar';vCol='var(--bad)';vBg='rgba(251,113,133,.10)';vBd='rgba(251,113,133,.30)';}
+  else if(baseOk&&LOTE.pdListo&&!pdMalo){vTxt='✅ LISTO PARA FUSIONAR / GENERAR';vCol='var(--ok)';vBg='rgba(52,211,153,.10)';vBd='rgba(52,211,153,.35)';}
   else if(baseOk&&!LOTE.pdListo){vTxt='🔵 Base lista · ahora sube el consolidado (paso 2)';vCol='var(--accent)';vBg='rgba(96,165,250,.10)';vBd='rgba(96,165,250,.30)';}
   else if(baseOk&&pdMalo){vTxt='⚠️ Revisa la base antes de generar · casi nada casó';vCol='var(--warn)';vBg='rgba(251,191,36,.10)';vBd='rgba(251,191,36,.30)';}
   else{vTxt='🔴 Empieza por el paso 1: sube la base del día';vCol='var(--bad)';vBg='rgba(251,113,133,.10)';vBd='rgba(251,113,133,.30)';}
@@ -1799,8 +1814,142 @@ function renderSemaforo(){
   el.innerHTML=`<div style="display:grid;gap:9px">
     ${luz(l1c,l1t)}
     ${luz(l2c,l2t)}
+    ${luz(l3c,l3t)}
     <div style="text-align:center;font-weight:700;font-size:13px;padding:10px;border-radius:11px;color:${vCol};background:${vBg};border:1px solid ${vBd}">${vTxt}</div>
   </div>`;
+}
+/* ============ ASIGNACIÓN MANUAL DE CARTAS ============
+   Permite asignar cuentas a un gestor una por una o por lote.
+   Manda sobre la recopilación: si asignas a mano, esa manda.
+   NO toca la lógica de tipo de carta (cobro/aldía/finiquito/reserva). */
+let ASIG_MANUAL={};          // clave cuenta -> nombre gestor
+let ASIG_FILTRO={pais:'todos',estado:'todos',texto:''};
+
+async function dbCargarAsignaciones(){
+  if(!SB_OK||!sb) return 0;
+  try{
+    const {data,error}=await sb.from('cartera_asignaciones')
+      .select('codigo,pais,gestor').eq('vigente',true).limit(5000);
+    if(error) return 0;
+    ASIG_MANUAL={};
+    (data||[]).forEach(a=>{ASIG_MANUAL[claveCuenta(a.codigo,a.pais)]=a.gestor;});
+    return Object.keys(ASIG_MANUAL).length;
+  }catch(e){return 0;}
+}
+async function dbAsignarCuentas(lista,gestor,motivo){
+  if(!SB_OK||!sb) return {ok:false,msg:'sin conexión'};
+  let n=0, fallo=null;
+  for(const r of lista){
+    try{
+      const {error}=await sb.rpc('cartera_asignar',{
+        p_codigo:r.cod,p_pais:r.pais,p_gestor:gestor,p_origen:'reasignacion',
+        p_motivo:motivo||'Asignación manual desde el sistema',
+        p_por:(STATE.role&&STATE.role.user)||'—',p_lote:null});
+      if(error){ fallo=error.message; break; }
+      n++;
+    }catch(e){ fallo=e.message; break; }
+  }
+  return {ok:!fallo,n:n,msg:fallo};
+}
+function cuentasFiltradas(){
+  const f=ASIG_FILTRO, t=(f.texto||'').toLowerCase().trim();
+  return REPS.filter(r=>{
+    if(f.pais!=='todos'&&r.pais!==f.pais) return false;
+    const g=ASIG_MANUAL[claveCuenta(r.cod,r.pais)]||DUENO_CUENTA[claveCuenta(r.cod,r.pais)]||null;
+    if(f.estado==='sin'&&g) return false;
+    if(f.estado==='con'&&!g) return false;
+    if(t&&!(String(r.cod).toLowerCase().includes(t)||String(r.nombre||'').toLowerCase().includes(t))) return false;
+    return true;
+  });
+}
+function viewAsignar(){
+  const lista=cuentasFiltradas();
+  const paisesOpt=['todos',...Object.keys(PAISES)].map(p=>
+    `<option value="${p}" ${ASIG_FILTRO.pais===p?'selected':''}>${p==='todos'?'Todos los países':(PAISES[p]||{}).nombre||p}</option>`).join('');
+  const gestOpt=GESTORES.filter(g=>g.activo!==false).map(g=>
+    `<option value="${g.nombre}">${g.nombre.split(' ').slice(0,3).join(' ')} · ${g.cod}</option>`).join('');
+  const sinG=REPS.filter(r=>!(ASIG_MANUAL[claveCuenta(r.cod,r.pais)]||DUENO_CUENTA[claveCuenta(r.cod,r.pais)])).length;
+  const filas=lista.slice(0,300).map(r=>{
+    const k=claveCuenta(r.cod,r.pais);
+    const g=ASIG_MANUAL[k]||DUENO_CUENTA[k]||null;
+    return `<tr>
+      <td><input type="checkbox" class="asigChk" value="${k}" ${STATE.sel.has(k)?'checked':''}
+           onchange="toggleAsig('${k}',this.checked)"></td>
+      <td><b>${r.cod}</b></td>
+      <td>${(PAISES[r.pais]||{}).nombre||r.pais}</td>
+      <td style="font-size:12px">${r.nombre||'—'}</td>
+      <td><span class="pd-chip pd-${r.estatus==='A'?'A':'C'}">PD${r.inact}</span></td>
+      <td>${g?`<span style="color:var(--ok)">${g.split(' ').slice(0,2).join(' ')}</span>`
+             :`<span style="color:var(--warn)">Sin asignar</span>`}</td></tr>`;}).join('');
+  document.getElementById('asigPanel').innerHTML=`
+    <div class="panel glass" style="margin-top:16px">
+      <div class="panel-h"><div><h3>Asignar cartas a gestores</h3>
+        <div style="font-size:12px;color:var(--txt-3);margin-top:3px">Marca cuentas y asígnalas · la asignación manual manda sobre la recopilación</div></div>
+        <span class="pill ${sinG?'warn':'ok'}">${sinG} sin asignar</span></div>
+      <div style="display:flex;gap:9px;flex-wrap:wrap;margin-bottom:12px">
+        <select class="select" style="max-width:180px" onchange="ASIG_FILTRO.pais=this.value;viewAsignar()">${paisesOpt}</select>
+        <select class="select" style="max-width:170px" onchange="ASIG_FILTRO.estado=this.value;viewAsignar()">
+          <option value="todos" ${ASIG_FILTRO.estado==='todos'?'selected':''}>Todas</option>
+          <option value="sin" ${ASIG_FILTRO.estado==='sin'?'selected':''}>Solo sin asignar</option>
+          <option value="con" ${ASIG_FILTRO.estado==='con'?'selected':''}>Solo asignadas</option>
+        </select>
+        <input class="input" style="max-width:200px" placeholder="Buscar código o nombre…"
+          value="${ASIG_FILTRO.texto}" oninput="ASIG_FILTRO.texto=this.value;clearTimeout(window._at);window._at=setTimeout(viewAsignar,350)">
+        <button class="btn ghost sm" onclick="selTodasAsig(true)">Marcar las ${lista.length} filtradas</button>
+        <button class="btn ghost sm" onclick="selTodasAsig(false)">Desmarcar</button>
+      </div>
+      <div style="display:flex;gap:9px;flex-wrap:wrap;align-items:center;padding:11px;border-radius:11px;background:rgba(255,255,255,.03);margin-bottom:12px">
+        <b style="font-size:12.5px"><span id="asigCount">${STATE.sel.size}</span> seleccionadas →</b>
+        <select class="select" id="asigGestor" style="max-width:230px">${gestOpt}</select>
+        <button class="btn primary sm" onclick="aplicarAsignacion()">Asignar a este gestor</button>
+        <button class="btn ghost sm" onclick="repartirEquitativo()">Repartir entre todos los gestores</button>
+      </div>
+      <div style="max-height:420px;overflow-y:auto">
+        <table class="tbl"><thead><tr><th style="width:34px"></th><th>Código</th><th>País</th>
+          <th>Consejera</th><th>PD</th><th>Gestor</th></tr></thead>
+          <tbody>${filas||'<tr><td colspan="6" style="text-align:center;color:var(--txt-3);padding:18px">Sin cuentas con este filtro</td></tr>'}</tbody></table>
+        ${lista.length>300?`<div style="text-align:center;font-size:11.5px;color:var(--txt-3);padding:9px">Mostrando 300 de ${lista.length} · usa los filtros o "Marcar las ${lista.length} filtradas"</div>`:''}
+      </div>
+    </div>`;
+}
+function toggleAsig(k,on){ if(on)STATE.sel.add(k); else STATE.sel.delete(k);
+  const c=document.getElementById('asigCount'); if(c)c.textContent=STATE.sel.size; }
+function selTodasAsig(on){
+  if(on) cuentasFiltradas().forEach(r=>STATE.sel.add(claveCuenta(r.cod,r.pais)));
+  else STATE.sel.clear();
+  viewAsignar();
+}
+async function aplicarAsignacion(){
+  if(!STATE.sel.size){toast('info','Marca al menos una cuenta');return;}
+  const gestor=document.getElementById('asigGestor').value;
+  const lista=REPS.filter(r=>STATE.sel.has(claveCuenta(r.cod,r.pais)));
+  if(!confirm(`Asignar ${lista.length} cuenta(s) a ${gestor}?`)) return;
+  toast('info',`Asignando ${lista.length}…`);
+  const r=await dbAsignarCuentas(lista,gestor,'Asignación manual');
+  lista.slice(0,r.n).forEach(x=>{ASIG_MANUAL[claveCuenta(x.cod,x.pais)]=gestor;});
+  if(r.ok) toast('ok',`${r.n} cuenta(s) asignadas a ${gestor.split(' ')[0]}`);
+  else toast('bad',`Se asignaron ${r.n} y falló: ${r.msg}`);
+  STATE.sel.clear(); viewAsignar();
+}
+async function repartirEquitativo(){
+  const activos=GESTORES.filter(g=>g.activo!==false);
+  if(!activos.length){toast('info','No hay gestores activos');return;}
+  const lista=STATE.sel.size?REPS.filter(r=>STATE.sel.has(claveCuenta(r.cod,r.pais))):cuentasFiltradas();
+  if(!lista.length){toast('info','No hay cuentas para repartir');return;}
+  const porC=Math.ceil(lista.length/activos.length);
+  if(!confirm(`Repartir ${lista.length} cuenta(s) entre ${activos.length} gestores?\n\n≈ ${porC} cuentas cada uno.`)) return;
+  toast('info','Repartiendo…');
+  let total=0, err=null;
+  for(let i=0;i<activos.length;i++){
+    const trozo=lista.slice(i*porC,(i+1)*porC);
+    if(!trozo.length) continue;
+    const r=await dbAsignarCuentas(trozo,activos[i].nombre,'Reparto equitativo');
+    trozo.slice(0,r.n).forEach(x=>{ASIG_MANUAL[claveCuenta(x.cod,x.pais)]=activos[i].nombre;});
+    total+=r.n; if(!r.ok){err=r.msg;break;}
+  }
+  if(err) toast('bad',`Se repartieron ${total} y falló: ${err}`);
+  else toast('ok',`${total} cuentas repartidas entre ${activos.length} gestores`);
+  STATE.sel.clear(); viewAsignar();
 }
 /* --- generador de consulta SQL con el formato oficial --- */
 function consolidadoPares(){
@@ -2034,6 +2183,7 @@ function parseFilaBase(row,headers){
 function loadDemo(){toast('ok','Usando datos de ejemplo · '+REPS.length+' representantes'); go('gen');}
 async function cargarBaseReal(ev){
   const file=ev.target.files[0]; if(!file)return;
+  window.__archivoBase=file.name;
   document.getElementById('baseDropTitle').textContent='Leyendo '+file.name+'…';
   try{
     const buf=await file.arrayBuffer();
@@ -2054,8 +2204,15 @@ async function cargarBaseReal(ev){
       if(_keys.length<parsed.length){ parsed.length=0; _keys.forEach(k=>parsed.push(_byc[k])); } // evita duplicados si el archivo trae códigos repetidos
       REPS.length=0; parsed.forEach(p=>REPS.push(p));
       LOTE.baseOrigen='archivo'; LOTE.baseN=parsed.length; LOTE.pdListo=false; LOTE.pdOk=0; LOTE.pdSinMatch=0;
+      LOTE.nubeEstado='guardando'; LOTE.enNube=0; LOTE.nubeMsg='';
       renderSemaforo();
-      dbGuardarRepresentantes(parsed).then(r=>{ if(r.ok) toast('ok','Base sincronizada en Supabase · visible para todos'); else if(SB_OK) toast('info','Base local OK · no se sincronizó: '+r.msg); });
+      dbGuardarRepresentantes(parsed).then(r=>{
+        if(r.ok){ LOTE.nubeEstado='ok'; LOTE.enNube=r.enNube; LOTE.nubeMsg='';
+          toast('ok',`Base guardada y verificada en la nube · ${r.enNube} cuentas`); }
+        else { LOTE.nubeEstado='error'; LOTE.enNube=r.enNube||r.escritas||0; LOTE.nubeMsg=r.msg||'error desconocido';
+          toast('bad','NO se guardó en la nube: '+(r.msg||'error')); }
+        renderSemaforo();
+      });
     }
     const porPais={}; parsed.forEach(p=>{porPais[p.pais]=(porPais[p.pais]||0)+1;});
     const sinPD=parsed.filter(p=>p.pdFaltante).length;
@@ -3602,18 +3759,33 @@ async function dbCargarRepresentantes(){
   }catch(e){return false;}
 }
 async function dbGuardarRepresentantes(parsed){
-  if(!SB_OK||!sb) return {ok:false,msg:'sin conexión'};
+  if(!SB_OK||!sb) return {ok:false,msg:'sin conexión a Supabase'};
   try{
-    // reemplaza la base anterior · .not(id,is,null) funciona con uuid y con serial
-    const {error:eDel}=await sb.from('cartera_representantes').delete().not('id','is',null);
-    if(eDel) return {ok:false,msg:'no se pudo limpiar la base anterior: '+eDel.message};
     const filas=parsed.map(p=>({codigo:p.cod,pais:p.pais,zona:p.zona,nombre:p.nombre,estatus:p.estatus,
       pd:p.inact,inactividades:p.inactividadesInfo,balance:p.balance,cedula:p.cedula,campania:p.camp}));
-    for(let i=0;i<filas.length;i+=200){
-      const {error}=await sb.from('cartera_representantes').insert(filas.slice(i,i+200));
-      if(error) return {ok:false,msg:error.message};
+
+    // Carga ATÓMICA del lado del servidor: o entra todo, o no entra nada.
+    // Antes se hacía delete + insert por lotes de 200: si fallaba a media carga,
+    // la base quedaba vacía o incompleta y no había forma de revertir.
+    const {data:lote,error}=await sb.rpc('cartera_cargar_base',{
+      p_filas:filas,
+      p_usuario:(STATE.role&&STATE.role.user)||'—',
+      p_archivo:window.__archivoBase||null});
+    if(error){
+      const falta=/does not exist|could not find|schema cache/i.test(error.message||'');
+      return {ok:false,msg:falta
+        ?'falta ejecutar cartera_trazabilidad.sql en Supabase (no existe cartera_cargar_base)'
+        :error.message};
     }
-    return {ok:true};
+
+    // VERIFICACIÓN REAL: volver a contar en la nube. Nunca asumir que se guardó.
+    const paises=[...new Set(parsed.map(p=>p.pais))];
+    const {count,error:eCnt}=await sb.from('cartera_representantes')
+      .select('codigo',{count:'exact',head:true}).in('pais',paises);
+    if(eCnt) return {ok:false,msg:'no se pudo verificar en la nube: '+eCnt.message};
+    if((count||0)<filas.length) return {ok:false,enNube:count||0,
+      msg:`la nube quedó con ${count||0} de ${filas.length} · la carga NO está completa`};
+    return {ok:true,enNube:count,lote:lote};
   }catch(e){return {ok:false,msg:e.message};}
 }
 async function dbCargarCartas(){
