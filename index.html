@@ -1652,13 +1652,26 @@ let LOTE={baseOrigen:'ninguna',baseN:0,pdListo:false,pdOk:0,pdSinMatch:0,
    Una carta pertenece al gestor dueño de la cuenta, aunque la haya generado
    el supervisor por lote. Sin esto, los gestores no ven sus propias cartas. */
 let DUENO_CUENTA={}; // 'codigo|ISO' -> nombre del gestor
-function claveCuenta(cod,pais){ return String(cod).trim()+'|'+String(pais).trim().toUpperCase(); }
+/* --- normalizadores tolerantes a errores de captura de los gestores --- */
+function normCodigo(v){
+  let s=String(v==null?'':v);
+  s=s.replace(/\u00A0/g,' ').replace(/^[\s'"`]+|[\s'"`]+$/g,'').replace(/\s+/g,'');
+  if(/^\d+\.0*$/.test(s)) s=s.split('.')[0];      // 254967.0 / 254967.00 -> 254967
+  if(/^\d+$/.test(s)) s=String(parseInt(s,10));    // 0254967 -> 254967
+  return s.toUpperCase();
+}
+function partirLinea(linea){
+  const cands=[',',';','\t','|']; let mejor=',',max=0;
+  cands.forEach(d=>{const n=String(linea).split(d).length; if(n>max){max=n;mejor=d;}});
+  return String(linea).split(mejor).map(x=>x.replace(/^["']+|["']+$/g,'').trim());
+}
+function claveCuenta(cod,pais){ return normCodigo(cod)+'|'+String(pais==null?'':pais).trim().toUpperCase(); }
 function construirDuenos(){
   DUENO_CUENTA={};
   (RECOP_CACHE||[]).forEach(r=>{
-    (r.csv||'').split('\n').forEach(l=>{
-      if(!l||/^codigo/i.test(l)) return;
-      const p=l.split(',').map(x=>x.trim());
+    (r.csv||'').split(/\r?\n/).forEach(l=>{
+      if(!l||/^\s*codigo/i.test(l)) return;
+      const p=partirLinea(l);
       if(!p[0]||!p[1]) return;
       const iso=paisAIso(p[1]);
       if(iso) DUENO_CUENTA[claveCuenta(p[0],iso)]=r.nombre;
@@ -2001,20 +2014,30 @@ function descargarSQLTxt(sql,cb){
 /* --- fusionar PD directo desde las recopilaciones del día --- */
 function aplicarFusionPares(pares){
   let ok=0,sinMatch=0,tiposNoSoportados=0;
+  const prob={paisIlegible:[],noEnBase:[],pdVacio:[],pdRaro:[]};
+  // índice por código+país normalizados: match exacto y rápido
+  const idx=new Map();
+  REPS.forEach(x=>idx.set(claveCuenta(x.cod,x.pais),x));
   pares.forEach(([cod,paisTxt,pdTxt,tipoTxt])=>{
     const iso=paisAIso(paisTxt);
-    const rep=REPS.find(x=>x.cod===cod&&x.pais===iso);
-    if(!rep){sinMatch++;return;}
-    const t=String(pdTxt||'').toUpperCase();
+    if(!iso){ sinMatch++; if(prob.paisIlegible.length<40) prob.paisIlegible.push(`${cod} · "${paisTxt}"`); return; }
+    const rep=idx.get(claveCuenta(cod,iso));
+    if(!rep){ sinMatch++; if(prob.noEnBase.length<40) prob.noEnBase.push(`${cod} · ${iso}`); return; }
+    const t=String(pdTxt||'').toUpperCase().trim();
     if(t==='M'||t==='R'){rep.estatus=t;rep.inact=0;}
-    else{const n=parseInt(t.replace(/[^\d]/g,''));if(!isNaN(n))rep.inact=n;}
+    else{
+      const n=parseInt(t.replace(/[^\d]/g,''),10);
+      if(isNaN(n)){ if(prob.pdVacio.length<40) prob.pdVacio.push(`${cod} · ${iso}`); }
+      else if(n<0||n>12){ if(prob.pdRaro.length<40) prob.pdRaro.push(`${cod} · PD${n}`); rep.inact=n; }
+      else rep.inact=n;
+    }
     rep.pdFaltante=false;
     const tipoNorm=normalizarTipoSolicitado(tipoTxt);
     rep.tipoSolicitado=tipoNorm.id; rep.tipoSolicitadoTexto=tipoNorm.texto;
     if(tipoNorm.id==='no_soportado') tiposNoSoportados++;
     ok++;
   });
-  return {ok,sinMatch,tiposNoSoportados};
+  return {ok,sinMatch,tiposNoSoportados,prob};
 }
 function autoFusionarCache(){
   // Restaura el tipo/PD desde el consolidado guardado, en silencio (al iniciar sesión).
@@ -2052,16 +2075,24 @@ function fusionarPD(ev){
     const iP=headers.findIndex(h=>h.includes('PAIS')||h.includes('PAÍS'));
     const iPD=headers.findIndex(h=>h==='PD');
     const iT=headers.findIndex(h=>h==='TIPO');
-    const pares=rows.slice(1).map(r=>[String(r[iC]||'').trim(),String(r[iP]||'').trim(),String(r[iPD]||'').trim(),iT>=0?String(r[iT]||'').trim():'']);
+    const pares=rows.slice(1).map(r=>[String(r[iC]==null?'':r[iC]).trim(),String(r[iP]==null?'':r[iP]).trim(),String(r[iPD]==null?'':r[iPD]).trim(),iT>=0?String(r[iT]==null?'':r[iT]).trim():'']);
     const res=aplicarFusionPares(pares);
     LOTE.pdListo=true; LOTE.pdOk=res.ok; LOTE.pdSinMatch=res.sinMatch;
     if(REPS.length===0){ toast('bad','No hay base cargada · sube primero la base del día (paso 1)'); }
     else if((res.ok+res.sinMatch)>0 && res.sinMatch/(res.ok+res.sinMatch)>0.7){ toast('info','⚠ Casi nada coincidió · ¿cargaste la base de HOY antes del consolidado?'); }
     renderSemaforo();
+    const P=res.prob||{paisIlegible:[],noEnBase:[],pdVacio:[],pdRaro:[]};
+    const bloque=(titulo,arr,color)=> arr.length?`<div style="margin-top:8px;color:${color}">
+        ⚠ <b>${arr.length}</b> ${titulo}
+        <div style="font-size:11px;color:var(--txt-3);margin-top:3px;line-height:1.6">${arr.slice(0,12).join(' · ')}${arr.length>12?` … y ${arr.length-12} más`:''}</div>
+      </div>`:'';
     document.getElementById('pdSummary').innerHTML=`
       <div style="margin-top:14px;padding:12px;border-radius:10px;background:rgba(52,211,153,.06);border:1px solid rgba(52,211,153,.18);font-size:12.5px;color:var(--txt-2)">
         ${svg(ICO.check,14)} <b style="color:var(--ok)">${res.ok} cuentas actualizadas</b> con su PD real.
-        ${res.sinMatch?`<div style="margin-top:8px;color:var(--warn)">⚠ ${res.sinMatch} sin coincidencia en la base</div>`:''}
+        ${bloque('con país ilegible en la recopilación (revisar con el gestor)',P.paisIlegible,'var(--warn)')}
+        ${bloque('que no existen en la base del query',P.noEnBase,'var(--warn)')}
+        ${bloque('sin PD en la recopilación (quedan con el PD de la base)',P.pdVacio,'var(--warn)')}
+        ${bloque('con PD fuera de rango (0-12) · verificar',P.pdRaro,'var(--warn)')}
         ${res.tiposNoSoportados?`<div style="margin-top:8px;color:var(--warn)">⚠ ${res.tiposNoSoportados} cuentas piden un tipo de carta que el sistema aún no tiene (CASC, Carta Crediticia, etc.)</div>`:''}
       </div>`;
     toast('ok',`PD fusionado · ${res.ok} cuentas listas para generar`);
@@ -2077,13 +2108,15 @@ function fusionarPD(ev){
 
 function filasConsolidado(){
   // arma el consolidado desde las recopilaciones reales de los gestores (Codigo,Pais,PD,Tipo)
+  // tolera separador , ; tab o | · deduplica por código+país YA normalizados
   const filas=[]; const vistos=new Set();
   (RECOP_CACHE||[]).forEach(r=>{
-    (r.csv||'').split('\n').forEach(l=>{
-      if(/^codigo/i.test(l))return;
-      const p=l.split(',').map(x=>x.trim());
+    (r.csv||'').split(/\r?\n/).forEach(l=>{
+      if(!l||/^\s*codigo/i.test(l))return;
+      const p=partirLinea(l);
       if(p[0]&&p[1]){
-        const key=p[0]+'|'+p[1];
+        const iso=paisAIso(p[1]);
+        const key=normCodigo(p[0])+'|'+(iso||p[1].toUpperCase());
         if(!vistos.has(key)){vistos.add(key);filas.push([p[0],p[1],p[2]||'',p[3]||'']);}
       }
     });
@@ -2106,17 +2139,33 @@ function downloadConsolidado(n){
 }
 /* ============ CARGA REAL DE LA BASE DEL QUERY ============ */
 const PAIS_A_ISO={GUATEMALA:'GT','EL SALVADOR':'SV',HONDURAS:'HD',NICARAGUA:'NC',PANAMA:'PA','PANAMÁ':'PA','REPUBLICA DOMINICANA':'RD','REPÚBLICA DOMINICANA':'RD','DOMINICANA':'RD','RD':'RD'};
-/* convierte cualquier texto de país (con o sin tildes, corrupto, abreviado) al código ISO */
+/* alias: incluye los ISO REALES (HN, NI, DO) que no coinciden con los internos (HD, NC, RD) */
+const PAIS_ALIAS={GT:'GT',GTM:'GT',GUA:'GT',GUATE:'GT',GUATEMALA:'GT',
+  SV:'SV',SLV:'SV',ES:'SV',ELSALVADOR:'SV',SALVADOR:'SV',
+  HD:'HD',HN:'HD',HND:'HD',HON:'HD',HONDURAS:'HD',
+  NC:'NC',NI:'NC',NIC:'NC',NICARAGUA:'NC',
+  PA:'PA',PAN:'PA',PTY:'PA',PANAMA:'PA',
+  RD:'RD',DO:'RD',DOM:'RD',DOMINICANA:'RD',REPUBLICADOMINICANA:'RD',REPDOMINICANA:'RD'};
+const PAIS_NOMBRES={GUATEMALA:'GT',ELSALVADOR:'SV',SALVADOR:'SV',HONDURAS:'HD',NICARAGUA:'NC',PANAMA:'PA',DOMINICANA:'RD',REPUBLICADOMINICANA:'RD'};
+function _lev(a,b){const m=a.length,n=b.length; if(!m)return n; if(!n)return m;
+  let prev=Array.from({length:n+1},(_,j)=>j);
+  for(let i=1;i<=m;i++){const cur=[i];
+    for(let j=1;j<=n;j++) cur[j]=Math.min(prev[j]+1,cur[j-1]+1,prev[j-1]+(a[i-1]===b[j-1]?0:1));
+    prev=cur;}
+  return prev[n];}
+/* convierte cualquier texto de país al ISO interno · tolera tildes, abreviaturas y errores de dedo */
 function paisAIso(txt){
-  if(!txt) return null;
-  let t=String(txt).trim().toUpperCase();
-  if(PAISES[t]) return t; // ya es un ISO válido (GT, SV…)
-  // quita tildes y cualquier carácter no alfabético (arregla "PANAMÁ¡", "PANAMÃ", etc.)
-  const limpio=t.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Z ]/g,'').trim();
-  if(PAIS_A_ISO[limpio]) return PAIS_A_ISO[limpio];
-  // coincidencia por prefijo (PANAMA, PANAM, GUATEMAL…)
-  const claves={GUATEMALA:'GT',SALVADOR:'SV',HONDURAS:'HD',NICARAGUA:'NC',PANAMA:'PA',DOMINICANA:'RD'};
-  for(const k in claves){ if(limpio.includes(k)||k.includes(limpio)&&limpio.length>=4) return claves[k]; }
+  if(txt==null) return null;
+  const t=String(txt).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/[^A-Z]/g,'');
+  if(!t) return null;
+  if(PAISES[t]) return t;                 // ya es ISO interno válido
+  if(PAIS_ALIAS[t]) return PAIS_ALIAS[t]; // alias conocido (HN, NIC, DOM, SLV…)
+  // tolerancia a errores de dedo: distancia <=2 contra el nombre completo
+  let mejor=null,mejorD=99;
+  for(const nom in PAIS_NOMBRES){const d=_lev(t,nom); if(d<mejorD){mejorD=d;mejor=PAIS_NOMBRES[nom];}}
+  if(mejorD<=2) return mejor;
+  // prefijo (PANAM, HONDUR…) solo con 4+ letras, para no adivinar de más
+  for(const nom in PAIS_NOMBRES){ if(t.length>=4&&(nom.startsWith(t)||t.startsWith(nom))) return PAIS_NOMBRES[nom]; }
   return null;
 }
 /* texto que escribe el gestor en la columna "Tipo" -> tipo interno del sistema */
