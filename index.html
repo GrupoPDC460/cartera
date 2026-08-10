@@ -2727,7 +2727,7 @@ function frame(o){
     <div style="border-bottom:2.5px solid #DA1884;margin-bottom:22px"></div>
     ${o.titulo?`<div class="lf-title">${o.titulo}</div>`:''}
     <div class="lf-date">${o.fecha}</div>
-    ${o.destinatario?`<div style="margin-bottom:16px">Señora(or): <b>${o.rep.nombre}</b><br>Código de representante: ${o.rep.cod} &nbsp;&nbsp; Zona: ${o.rep.zona}<br>Presente.</div>`:''}
+    ${o.destinatario?`<div style="margin-bottom:16px">Señora(or): <b>${o.rep.nombre}</b><br>Código de representante: ${o.rep.cod} &nbsp;&nbsp; Zona: ${o.rep.zona}${(o.rep.sector&&o.rep.sector!=='—')?` &nbsp;&nbsp; Sector: ${o.rep.sector}`:''}<br>Presente.</div>`:''}
     ${o.asunto?`<p style="margin-bottom:14px"><b>Asunto: ${o.asunto}</b></p>`:''}
     ${o.parrafos}
     <div class="lf-sign"><p>Atentamente,</p>
@@ -2863,6 +2863,7 @@ function viewAuth(){
     :`<div style="flex:1;font-size:12.5px;color:var(--txt-2);display:flex;align-items:center;gap:9px">${svg(ICO.check,15)} Firma de ${STATE.role.user.split(' ')[0]} lista · se estampará en cada carta aprobada.</div>`}
     <button class="btn primary" ${pend.length?'':'disabled'} onclick="approveAll()">${svg(ICO.all)} Autorizar todas (${pend.length})</button>
   </div>
+    <div id="authProgreso" style="display:none;margin:14px 0"></div>
   ${pend.length?`<div class="auth-grid">${pend.map(x=>`
     <div class="auth-card glass" data-num="${x.num}">
       <div class="ah"><div class="lett-ico">${svg(ICO.letter,18)}</div><span class="num">${x.num}</span></div>
@@ -2884,14 +2885,50 @@ function viewAuth(){
 async function approveAll(){
   const cards=[...document.querySelectorAll('.auth-card')];
   if(!cards.length){toast('info','No hay cartas pendientes');return;}
-  for(const c of cards){
-    const num=c.dataset.num;
-    await dbAprobar(num,STATE.role.user);
-    const cc=CARTAS.find(x=>x.num===num); if(cc){cc.estado='aprobada';cc.autorizo=STATE.role.user;}
-    c.style.transition='.3s';c.style.opacity='0';
-    await new Promise(r=>setTimeout(r,160)); c.remove();
+  const nums=cards.map(c=>c.dataset.num).filter(Boolean);
+  const total=nums.length;
+
+  const btn=document.querySelector('.btn.primary[onclick="approveAll()"]');
+  if(btn){btn.disabled=true;btn.textContent='Autorizando…';}
+  const barra=(hechas)=>{
+    const el=_el('authProgreso'); if(!el||typeof el.innerHTML==='undefined') return;
+    if(el.style) el.style.display='block';
+    const p=Math.round(hechas/total*100);
+    el.innerHTML=`<div style="font-size:12.5px;color:var(--txt-2);margin-bottom:6px;display:flex;justify-content:space-between">
+        <span>Autorizando y firmando cartas…</span><b style="color:var(--ok)">${hechas} de ${total}</b></div>
+      <div style="height:9px;border-radius:99px;background:rgba(255,255,255,.07);overflow:hidden">
+        <div style="height:100%;width:${p}%;background:var(--ok);border-radius:99px;transition:width .15s ease"></div></div>`;
+  };
+  barra(0);
+
+  // Antes: 2 viajes a la red POR CARTA (leer snapshot + escribir) y 160 ms de espera
+  // en cada una. Con 1550 cartas eso son 3100 llamadas y varios minutos.
+  // Ahora: bloques de 300 en una sola llamada al servidor.
+  const TAM=300; let hechas=0, fallos=0;
+  for(let i=0;i<nums.length;i+=TAM){
+    const bloque=nums.slice(i,i+TAM);
+    let ok=false;
+    if(SB_OK&&sb){
+      const {error}=await sb.rpc('cartera_aprobar_lote',{p_nums:bloque,p_quien:STATE.role.user});
+      if(error){
+        const falta=/does not exist|could not find|schema cache/i.test(error.message||'');
+        if(falta){
+          // sin la función en la base: se aprueba una por una (lento pero funciona)
+          for(const n of bloque){ if(await dbAprobar(n,STATE.role.user)) hechas++; else fallos++; barra(hechas); }
+          continue;
+        }
+        fallos+=bloque.length;
+      } else ok=true;
+    }
+    if(ok||!SB_OK){ hechas+=bloque.length; }
+    bloque.forEach(n=>{const cc=CARTAS.find(x=>x.num===n); if(cc){cc.estado='aprobada';cc.autorizo=STATE.role.user;}});
+    barra(hechas);
+    await new Promise(r=>setTimeout(r,0));   // deja respirar a la pantalla
   }
-  toast('ok',`${cards.length} cartas autorizadas y firmadas por ${STATE.role.user.split(' ')[0]}`);
+
+  const el=_el('authProgreso'); if(el&&el.style) el.style.display='none';
+  if(fallos) toast('bad',`${hechas} autorizadas · ${fallos} fallaron · revisa la conexión`);
+  else toast('ok',`${hechas} cartas autorizadas y firmadas por ${STATE.role.user.split(' ')[0]}`);
   buildNav(); viewAuth();
 }
 async function approve(btn,num){
