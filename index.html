@@ -2015,20 +2015,21 @@ function descargarSQLTxt(sql,cb){
 function aplicarFusionPares(pares){
   let ok=0,sinMatch=0,tiposNoSoportados=0;
   const prob={paisIlegible:[],noEnBase:[],pdVacio:[],pdRaro:[]};
+  const cnt={paisIlegible:0,noEnBase:0,pdVacio:0,pdRaro:0};   // total real (la muestra se limita a 12)
   // índice por código+país normalizados: match exacto y rápido
   const idx=new Map();
   REPS.forEach(x=>idx.set(claveCuenta(x.cod,x.pais),x));
   pares.forEach(([cod,paisTxt,pdTxt,tipoTxt])=>{
     const iso=paisAIso(paisTxt);
-    if(!iso){ sinMatch++; if(prob.paisIlegible.length<40) prob.paisIlegible.push(`${cod} · "${paisTxt}"`); return; }
+    if(!iso){ sinMatch++; cnt.paisIlegible++; if(prob.paisIlegible.length<12) prob.paisIlegible.push(`${cod} · "${paisTxt}"`); return; }
     const rep=idx.get(claveCuenta(cod,iso));
-    if(!rep){ sinMatch++; if(prob.noEnBase.length<40) prob.noEnBase.push(`${cod} · ${iso}`); return; }
+    if(!rep){ sinMatch++; cnt.noEnBase++; if(prob.noEnBase.length<12) prob.noEnBase.push(`${cod} · ${iso}`); return; }
     const t=String(pdTxt||'').toUpperCase().trim();
     if(t==='M'||t==='R'){rep.estatus=t;rep.inact=0;}
     else{
       const n=parseInt(t.replace(/[^\d]/g,''),10);
-      if(isNaN(n)){ if(prob.pdVacio.length<40) prob.pdVacio.push(`${cod} · ${iso}`); }
-      else if(n<0||n>12){ if(prob.pdRaro.length<40) prob.pdRaro.push(`${cod} · PD${n}`); rep.inact=n; }
+      if(isNaN(n)){ cnt.pdVacio++; if(prob.pdVacio.length<12) prob.pdVacio.push(`${cod} · ${iso}`); }
+      else if(n<0||n>12){ cnt.pdRaro++; if(prob.pdRaro.length<12) prob.pdRaro.push(`${cod} · PD${n}`); rep.inact=n; }
       else rep.inact=n;
     }
     rep.pdFaltante=false;
@@ -2037,7 +2038,7 @@ function aplicarFusionPares(pares){
     if(tipoNorm.id==='no_soportado') tiposNoSoportados++;
     ok++;
   });
-  return {ok,sinMatch,tiposNoSoportados,prob};
+  return {ok,sinMatch,tiposNoSoportados,prob,cnt};
 }
 function autoFusionarCache(){
   // Restaura el tipo/PD desde el consolidado guardado, en silencio (al iniciar sesión).
@@ -2082,17 +2083,27 @@ function fusionarPD(ev){
     else if((res.ok+res.sinMatch)>0 && res.sinMatch/(res.ok+res.sinMatch)>0.7){ toast('info','⚠ Casi nada coincidió · ¿cargaste la base de HOY antes del consolidado?'); }
     renderSemaforo();
     const P=res.prob||{paisIlegible:[],noEnBase:[],pdVacio:[],pdRaro:[]};
-    const bloque=(titulo,arr,color)=> arr.length?`<div style="margin-top:8px;color:${color}">
-        ⚠ <b>${arr.length}</b> ${titulo}
-        <div style="font-size:11px;color:var(--txt-3);margin-top:3px;line-height:1.6">${arr.slice(0,12).join(' · ')}${arr.length>12?` … y ${arr.length-12} más`:''}</div>
+    const C=res.cnt||{paisIlegible:0,noEnBase:0,pdVacio:0,pdRaro:0};
+    const bloque=(titulo,total,arr,color)=> total?`<div style="margin-top:8px;color:${color}">
+        ⚠ <b>${total}</b> ${titulo}
+        <div style="font-size:11px;color:var(--txt-3);margin-top:3px;line-height:1.6">${arr.join(' · ')}${total>arr.length?` … y ${total-arr.length} más`:''}</div>
       </div>`:'';
+    // aviso claro cuando la base es MUCHO menor que el consolidado: casi siempre es base vieja
+    const totalCons=res.ok+res.sinMatch;
+    const avisoBase=(REPS.length>0 && totalCons>0 && REPS.length < totalCons*0.5)
+      ? `<div style="margin-top:10px;padding:10px;border-radius:9px;background:rgba(251,191,36,.10);border:1px solid rgba(251,191,36,.32);color:var(--warn);font-size:12.5px">
+           🔎 <b>La base tiene ${REPS.length} cuentas y el consolidado ${totalCons}.</b>
+           No es un problema de mayúsculas ni de la columna ID: el cruce es por <b>CÓDIGO + PAÍS</b>.
+           Lo más probable es que la base cargada no sea la del query de hoy · vuelve al <b>paso 1</b> y sube el Excel del query.
+         </div>` : '';
     document.getElementById('pdSummary').innerHTML=`
       <div style="margin-top:14px;padding:12px;border-radius:10px;background:rgba(52,211,153,.06);border:1px solid rgba(52,211,153,.18);font-size:12.5px;color:var(--txt-2)">
         ${svg(ICO.check,14)} <b style="color:var(--ok)">${res.ok} cuentas actualizadas</b> con su PD real.
-        ${bloque('con país ilegible en la recopilación (revisar con el gestor)',P.paisIlegible,'var(--warn)')}
-        ${bloque('que no existen en la base del query',P.noEnBase,'var(--warn)')}
-        ${bloque('sin PD en la recopilación (quedan con el PD de la base)',P.pdVacio,'var(--warn)')}
-        ${bloque('con PD fuera de rango (0-12) · verificar',P.pdRaro,'var(--warn)')}
+        ${avisoBase}
+        ${bloque('con país ilegible en la recopilación (revisar con el gestor)',C.paisIlegible,P.paisIlegible,'var(--warn)')}
+        ${bloque('que no existen en la base del query',C.noEnBase,P.noEnBase,'var(--warn)')}
+        ${bloque('sin PD en la recopilación (quedan con el PD de la base)',C.pdVacio,P.pdVacio,'var(--warn)')}
+        ${bloque('con PD fuera de rango (0-12) · verificar',C.pdRaro,P.pdRaro,'var(--warn)')}
         ${res.tiposNoSoportados?`<div style="margin-top:8px;color:var(--warn)">⚠ ${res.tiposNoSoportados} cuentas piden un tipo de carta que el sistema aún no tiene (CASC, Carta Crediticia, etc.)</div>`:''}
       </div>`;
     toast('ok',`PD fusionado · ${res.ok} cuentas listas para generar`);
