@@ -2491,8 +2491,14 @@ function viewGen(){
   const auto=tipo==='auto'; // "Según lo solicitado": cada cuenta usa su tipoSolicitado
   const tipoDe=r=>auto?(r.tipoSolicitado&&TIPOS[r.tipoSolicitado]?r.tipoSolicitado:null):tipo;
   construirPrev();
-  const visibles=REPS.filter(r=>!yaGenerada(r,tipoDe(r)));   // oculta las cuentas cuyo tramo ya tiene carta
-  const ocultas=REPS.length-visibles.length;
+  // Solo la carga del día: si la base trae varios lotes, se muestra el más reciente.
+  // Las de cargas anteriores NO se borran, solo dejan de estorbar en esta pantalla.
+  const lotesDistintos=[...new Set(REPS.map(r=>r.lote).filter(Boolean))];
+  const filtrarLote=(LOTE.soloHoy!==false)&&LOTE.ultimoLote&&lotesDistintos.length>1;
+  const delDia=filtrarLote?REPS.filter(r=>r.lote===LOTE.ultimoLote):REPS;
+  const otrosLotes=REPS.length-delDia.length;
+  const visibles=delDia.filter(r=>!yaGenerada(r,tipoDe(r)));   // oculta las cuentas cuyo tramo ya tiene carta
+  const ocultas=delDia.length-visibles.length;
   const rows=visibles.filter(r=>{const _t=tipoDe(r);return _t&&validar(r,_t).ok;}).map(r=>{
     const tEfectivo=tipoDe(r);
     const v=tEfectivo?validar(r,tEfectivo):{ok:false,rsn:'Sin tipo solicitado · márcalo en la recopilación'};
@@ -2539,7 +2545,9 @@ function viewGen(){
   <div id="genFallos" style="display:none;margin-bottom:14px"></div>
   <div class="panel glass" style="margin-bottom:14px">
     <div class="panel-h"><div><h3>Resumen de esta carga</h3>
-      <div style="font-size:12px;color:var(--txt-3);margin-top:3px">${visibles.length} cuentas pendientes · ${validos.length} listas · ${blocked} bloqueadas${ocultas>0?` · <span style="color:var(--teal)">${ocultas} ya generadas (ocultas)</span>`:''}</div></div>
+      <div style="font-size:12px;color:var(--txt-3);margin-top:3px">${visibles.length} cuentas pendientes · ${validos.length} listas · ${blocked} bloqueadas${ocultas>0?` · <span style="color:var(--teal)">${ocultas} ya generadas (ocultas)</span>`:''}</div>
+      ${filtrarLote?`<div style="font-size:12px;color:var(--accent);margin-top:6px">${svg(ICO.check,12)} Mostrando <b>solo la carga de hoy</b> (${delDia.length} cuentas) · ${otrosLotes} de cargas anteriores están ocultas <span style="text-decoration:underline;cursor:pointer;color:var(--txt-3)" onclick="LOTE.soloHoy=false;viewGen()">ver todas</span></div>`
+        :(LOTE.soloHoy===false&&lotesDistintos.length>1?`<div style="font-size:12px;color:var(--warn);margin-top:6px">Mostrando <b>todas las cargas</b> · <span style="text-decoration:underline;cursor:pointer" onclick="LOTE.soloHoy=true;viewGen()">volver a solo la de hoy</span></div>`:'')}</div>
       <div style="display:flex;gap:8px">
         <span class="pill ok">${svg(ICO.check,12)} ${validos.length} listas</span>
         ${blocked?`<span class="pill no">${svg(ICO.block,12)} ${blocked} bloqueadas</span>`:''}
@@ -3999,7 +4007,9 @@ async function dbCargarRepresentantes(){
     if(!data.length) return true;         // tabla vacía = SIN cuentas (no es demo)
     data.forEach(r=>REPS.push({cod:r.codigo,pais:r.pais,zona:r.zona||'—',sector:r.sector||'—',nombre:r.nombre||'(sin nombre)',
       estatus:r.estatus||'A',inact:r.pd||0,balance:parseFloat(r.balance)||0,camp:r.campania||'—',
-      cedula:r.cedula||'—',prev:[]}));
+      cedula:r.cedula||'—',lote:r.lote_carga||null,corte:r.fecha_corte||null,prev:[]}));
+    // el lote más reciente = la carga del día
+    LOTE.ultimoLote=(data.slice().sort((x,y)=>String(y.fecha_corte||'').localeCompare(String(x.fecha_corte||'')))[0]||{}).lote_carga||null;
     LOTE.baseOrigen='nube'; LOTE.baseN=REPS.length; LOTE.pdListo=false; LOTE.pdOk=0; LOTE.pdSinMatch=0;
     return true;
   }catch(e){return false;}
