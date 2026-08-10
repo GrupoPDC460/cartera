@@ -1769,6 +1769,7 @@ function viewUpload(){
     </div>
     <div id="semaforoLote" style="margin-top:14px"></div>
     <p style="font-size:11px;color:var(--txt-3);margin-top:11px;line-height:1.5">Columnas de la base: CODIGO REP · ESTATUS ACTUAL · N. INACTIVIDADES · PAIS · ZONA · SECTOR · NOMBRE_CONSEJERA · FECHA_NOMBRAMIENTO · BALANCE · CEDULA · CAMPANIA_ULTIMA_ORDEN · ID</p>
+    <div id="baseDropTitle" style="font-size:12px;color:var(--txt-3);margin-top:10px">Sube la base del query SQL (.xlsx o .csv)</div>
     <div id="baseProgreso" style="display:none;margin-top:14px"></div>
     <div id="baseSummary"></div>
     <div id="pdSummary"></div>
@@ -2056,7 +2057,7 @@ function fusionarDesdeCache(){
     if(p[0]&&p[1])pares.push(p);});});
   if(!pares.length){toast('info','No hay recopilaciones hoy');return;}
   const r=aplicarFusionPares(pares);
-  document.getElementById('pdSummary').innerHTML=`<div style="margin-top:14px;padding:12px;border-radius:10px;background:rgba(52,211,153,.06);border:1px solid rgba(52,211,153,.18);font-size:12.5px;color:var(--txt-2)">
+  _el('pdSummary').innerHTML=`<div style="margin-top:14px;padding:12px;border-radius:10px;background:rgba(52,211,153,.06);border:1px solid rgba(52,211,153,.18);font-size:12.5px;color:var(--txt-2)">
     ${svg(ICO.check,14)} <b style="color:var(--ok)">${r.ok} cuentas con PD asignado</b>${r.sinMatch?` · ${r.sinMatch} sin coincidencia en la base`:''}${r.tiposNoSoportados?` · <span style="color:var(--warn)">${r.tiposNoSoportados} con un tipo de carta aún no soportado</span>`:''}</div>`;
   toast('ok',`PD fusionado desde el consolidado · ${r.ok} cuentas`);
 }
@@ -2097,7 +2098,7 @@ function fusionarPD(ev){
            No es un problema de mayúsculas ni de la columna ID: el cruce es por <b>CÓDIGO + PAÍS</b>.
            Lo más probable es que la base cargada no sea la del query de hoy · vuelve al <b>paso 1</b> y sube el Excel del query.
          </div>` : '';
-    document.getElementById('pdSummary').innerHTML=`
+    _el('pdSummary').innerHTML=`
       <div style="margin-top:14px;padding:12px;border-radius:10px;background:rgba(52,211,153,.06);border:1px solid rgba(52,211,153,.18);font-size:12.5px;color:var(--txt-2)">
         ${svg(ICO.check,14)} <b style="color:var(--ok)">${res.ok} cuentas actualizadas</b> con su PD real.
         ${avisoBase}
@@ -2242,9 +2243,12 @@ function parseFilaBase(row,headers){
   };
 }
 function loadDemo(){toast('ok','Usando datos de ejemplo · '+REPS.length+' representantes'); go('gen');}
+/* acceso seguro al DOM: si un elemento no existe, devuelve un objeto inerte
+   para que asignarle textContent/innerHTML no rompa toda la carga */
+function _el(id){ return document.getElementById(id) || {}; }
 /* barra de progreso visible durante la carga */
 function barraProgreso(pct,txt,color){
-  const el=document.getElementById('baseProgreso'); if(!el) return;
+  const el=_el('baseProgreso'); if(!el) return;
   el.style.display='block';
   const c=color||'var(--accent)'; const p=Math.max(0,Math.min(100,Math.round(pct)));
   el.innerHTML=`<div style="font-size:12.5px;color:var(--txt-2);margin-bottom:6px;display:flex;justify-content:space-between">
@@ -2257,8 +2261,8 @@ const _pausa=()=>new Promise(r=>setTimeout(r,0));
 async function cargarBaseReal(ev){
   const file=ev.target.files[0]; if(!file)return;
   window.__archivoBase=file.name;
-  document.getElementById('baseDropTitle').textContent='Leyendo '+file.name+'…';
-  document.getElementById('baseSummary').innerHTML='';
+  _el('baseDropTitle').textContent='Leyendo '+file.name+'…';
+  _el('baseSummary').innerHTML='';
   barraProgreso(5,'Leyendo el archivo…');
   try{
     const buf=await file.arrayBuffer();
@@ -2278,12 +2282,12 @@ async function cargarBaseReal(ev){
     if(hIdx<0){
       barraProgreso(100,'No se reconocieron los encabezados','var(--bad)');
       const vistos=(rows[0]||[]).map(h=>String(h)).filter(Boolean).slice(0,12).join(' · ');
-      document.getElementById('baseSummary').innerHTML=`<div class="panel glass" style="margin-top:14px">
+      _el('baseSummary').innerHTML=`<div class="panel glass" style="margin-top:14px">
         <div style="padding:12px;border-radius:10px;background:rgba(251,113,133,.08);border:1px solid rgba(251,113,133,.25);font-size:12.5px;color:var(--txt-2)">
         <b style="color:var(--bad)">No se encontraron las columnas CODIGO REP y PAIS.</b>
         <div style="margin-top:6px">Encabezados detectados: <span style="color:var(--txt-3)">${vistos||'(ninguno)'}</span></div>
         <div style="margin-top:6px">La base debe tener al menos <b>CODIGO REP</b> y <b>PAIS</b>.</div></div></div>`;
-      document.getElementById('baseDropTitle').textContent='Sube la base del query SQL (.xlsx o .csv)';
+      _el('baseDropTitle').textContent='Sube la base del query SQL (.xlsx o .csv)';
       toast('bad','No se reconocieron los encabezados del archivo');
       return;
     }
@@ -2306,11 +2310,11 @@ async function cargarBaseReal(ev){
 
     const porPais={}; parsed.forEach(p=>{porPais[p.pais]=(porPais[p.pais]||0)+1;});
     const sinPD=parsed.filter(p=>p.pdFaltante).length;
-    document.getElementById('baseDropTitle').textContent='Sube la base del query SQL (.xlsx o .csv)';
+    _el('baseDropTitle').textContent='Sube la base del query SQL (.xlsx o .csv)';
 
     if(!parsed.length){
       barraProgreso(100,'Ninguna fila válida','var(--bad)');
-      document.getElementById('baseSummary').innerHTML=`<div class="panel glass" style="margin-top:14px">
+      _el('baseSummary').innerHTML=`<div class="panel glass" style="margin-top:14px">
         <div style="padding:12px;border-radius:10px;background:rgba(251,113,133,.08);border:1px solid rgba(251,113,133,.25);font-size:12.5px;color:var(--txt-2)">
         <b style="color:var(--bad)">Se leyeron ${dataRows.length} filas pero ninguna quedó válida.</b>
         <div style="margin-top:6px;max-height:150px;overflow:auto">${errores.slice(0,25).map(e=>`<div>⚠ ${e}</div>`).join('')}</div></div></div>`;
@@ -2326,7 +2330,7 @@ async function cargarBaseReal(ev){
     toast('ok',`Base cargada · ${parsed.length} cuentas · ya puedes fusionar`);
 
     const pintar=(nubeHtml)=>{
-      document.getElementById('baseSummary').innerHTML=`
+      _el('baseSummary').innerHTML=`
       <div class="panel glass" style="margin-top:14px">
         <div class="panel-h"><h3>Resultado de la carga</h3>
           <span class="pill ${errores.length?'warn':'ok'}">${svg(errores.length?ICO.bell:ICO.check,12)} ${parsed.length} cuentas válidas${errores.length?` · ${errores.length} con error`:''}</span></div>
@@ -2362,9 +2366,9 @@ async function cargarBaseReal(ev){
     }
     renderSemaforo();
   }catch(e){
-    document.getElementById('baseDropTitle').textContent='Sube la base del query SQL (.xlsx o .csv)';
+    _el('baseDropTitle').textContent='Sube la base del query SQL (.xlsx o .csv)';
     barraProgreso(100,'Error al leer el archivo','var(--bad)');
-    document.getElementById('baseSummary').innerHTML=`<div class="panel glass" style="margin-top:14px">
+    _el('baseSummary').innerHTML=`<div class="panel glass" style="margin-top:14px">
       <div style="padding:12px;border-radius:10px;background:rgba(251,113,133,.08);border:1px solid rgba(251,113,133,.25);font-size:12.5px;color:var(--bad)">
       <b>No se pudo leer el archivo:</b> ${(e&&e.message)?e.message:'formato no soportado'}</div></div>`;
     toast('bad','No se pudo leer el archivo: '+((e&&e.message)?e.message:'formato no soportado'));
