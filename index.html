@@ -2245,6 +2245,7 @@ function parseFilaBase(row,headers){
     pais:iso||null,
     paisTexto:o.pais,
     zona:o.zona?String(o.zona).trim():'—',
+    sector:o.sector!=null&&String(o.sector).trim()!==''?String(o.sector).trim():'—',
     nombre:o.nombre?String(o.nombre).trim():'(sin nombre)',
     estatus:estatus,
     inact:pd,
@@ -2646,7 +2647,7 @@ Esta constancia se extiende a solicitud de la interesada, para los fines que est
 La presente constancia tiene una vigencia de treinta (30) días calendario, contados a partir de su fecha de emisión.
 Se extiende en la ciudad de {{CIUDAD}}, el {{FECHA}}.`,
 saldo:`A quien corresponda:
-{{ENTIDAD}} hace constar que la señora(or) {{NOMBRE}}, con código de representante {{CODIGO}} y zona {{ZONA}}, mantiene a la fecha un saldo pendiente de pago de {{MONEDA}} {{MONTO}}, correspondiente a la campaña {{CAMPANA}}.
+{{ENTIDAD}} hace constar que la señora(or) {{NOMBRE}}, con código de representante {{CODIGO}}, zona {{ZONA}} y sector {{SECTOR}}, mantiene a la fecha un saldo pendiente de pago de {{MONEDA}} {{MONTO}}, correspondiente a la campaña {{CAMPANA}}.
 El presente documento se extiende para que la representante pueda efectuar el pago correspondiente a través de {{CANALES_PAGO}}, indicando como referencia su código de representante {{CODIGO}}.
 Se extiende en la ciudad de {{CIUDAD}}, el {{FECHA}}.`,
 recovery:`Estimada(o) Representante:
@@ -2662,7 +2663,7 @@ function fillTokens(texto,c){
     .replace(/\{\{MONTO\}\}/g,`<b style="color:#000">${c.monto}</b>`)
     .replace(/\{\{MONEDA\}\}/g,c.moneda)
     .replace(/\{\{NOMBRE\}\}/g,`<b>${c.nombre}</b>`)
-    .replace(/\{\{CODIGO\}\}/g,c.cod).replace(/\{\{ZONA\}\}/g,c.zona)
+    .replace(/\{\{CODIGO\}\}/g,c.cod).replace(/\{\{ZONA\}\}/g,c.zona).replace(/\{\{SECTOR\}\}/g,c.sector)
     .replace(/\{\{CAMPANA\}\}/g,c.camp).replace(/\{\{ENTIDAD\}\}/g,c.entidad)
     .replace(/\{\{CIUDAD\}\}/g,c.ciudad).replace(/\{\{FECHA\}\}/g,c.fecha)
     .replace(/\{\{DOCUMENTO\}\}/g,c.doc).replace(/\{\{PLAZO\}\}/g,c.plazo)
@@ -2695,7 +2696,7 @@ function correlativo(rep,num){return num||`${rep.pais}-2026-0${100+(parseInt(rep
 function letterHTML(rep,tipo,num,fechaCarta){
   const p=PAISES[rep.pais];
   const ctx={moneda:p.moneda,monto:rep.balance.toLocaleString('es-GT',{minimumFractionDigits:2,maximumFractionDigits:2}),
-    nombre:rep.nombre,cod:rep.cod,zona:rep.zona,camp:rep.camp,entidad:p.entidad,ciudad:p.ciudad,
+    nombre:rep.nombre,cod:rep.cod,zona:rep.zona,sector:(rep.sector||'—'),camp:rep.camp,entidad:p.entidad,ciudad:p.ciudad,
     fecha:fechaLarga(fechaCarta),doc:rep.cedula,tel:'+502 0000-0000',canales:'banco o entidad autorizada',
     plazo:(tipo==='cobro'&&variantePorPD(rep.inact,rep.estatus).id==='requerimiento')?'5':'3'};
   let key,titulo=null,asunto=null,destinatario=true;
@@ -3189,11 +3190,13 @@ async function confirmEntrega(){
 function nombreArchivoCarta(rep,tipo,num){
   const limpio=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Za-z0-9 ]/g,'').trim().replace(/\s+/g,'_');
   const nombre=limpio(rep.nombre).slice(0,40);
-  const pais=(PAISES[rep.pais]&&PAISES[rep.pais].nombre)?limpio(PAISES[rep.pais].nombre):rep.pais;
-  const hoy=new Date();
-  const fecha=`${String(hoy.getDate()).padStart(2,'0')}-${String(hoy.getMonth()+1).padStart(2,'0')}-${hoy.getFullYear()}`;
+  const pais=rep.pais;                                   // iniciales: PA, HD, SV…
+  const f=fechaDeCarta(num);                             // fecha real de la carta
+  const d=(f instanceof Date)?f:new Date(String(f).slice(0,10)+'T00:00:00');
+  const fecha=`${String(d.getDate()).padStart(2,'0')}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getFullYear()).slice(-2)}`; // DDMMAA
   const tdoc={cobro:'Cobro',finiquito:'Finiquito',aldia:'Cuenta_al_Dia',saldo:'Saldo_Pendiente'}[tipo]||tipo;
-  return `${rep.cod}_${nombre}_${pais}_${fecha}_${tdoc}.pdf`;
+  const zona=limpio(rep.zona)||'SZ';                     // zona al final
+  return `${rep.cod}_${nombre}_${pais}_${fecha}_${tdoc}_${zona}.pdf`;
 }
 async function renderCartaAPdf(rep,tipo,num){
   const html=letterHTML(rep,tipo,num,fechaDeCarta(num));
@@ -3711,7 +3714,7 @@ const PL_ITEMS=[
   {k:'aldia',n:'Confirmación de Cuenta al Día',pd:'al día'},
   {k:'saldo',n:'Constancia de Saldo Pendiente',pd:'saldo > 0'},
 ];
-const TOKENS_DISP=['{{NOMBRE}}','{{CODIGO}}','{{ZONA}}','{{MONEDA}}','{{MONTO}}','{{CAMPANA}}','{{ENTIDAD}}','{{CIUDAD}}','{{FECHA}}','{{DOCUMENTO}}','{{PLAZO}}','{{CANALES_PAGO}}'];
+const TOKENS_DISP=['{{NOMBRE}}','{{CODIGO}}','{{ZONA}}','{{SECTOR}}','{{MONEDA}}','{{MONTO}}','{{CAMPANA}}','{{ENTIDAD}}','{{CIUDAD}}','{{FECHA}}','{{DOCUMENTO}}','{{PLAZO}}','{{CANALES_PAGO}}'];
 function viewPlantillas(){
   document.getElementById('view').innerHTML=`
   <div class="panel glass" style="margin-bottom:14px">
@@ -3938,7 +3941,7 @@ async function dbCargarRepresentantes(){
     DEMO_ACTIVO=false;                   // ya hablamos con la BD: nada de demo
     REPS.length=0;                       // conectó bien: la BD es la verdad
     if(!data.length) return true;         // tabla vacía = SIN cuentas (no es demo)
-    data.forEach(r=>REPS.push({cod:r.codigo,pais:r.pais,zona:r.zona||'—',nombre:r.nombre||'(sin nombre)',
+    data.forEach(r=>REPS.push({cod:r.codigo,pais:r.pais,zona:r.zona||'—',sector:r.sector||'—',nombre:r.nombre||'(sin nombre)',
       estatus:r.estatus||'A',inact:r.pd||0,balance:parseFloat(r.balance)||0,camp:r.campania||'—',
       cedula:r.cedula||'—',prev:[]}));
     LOTE.baseOrigen='nube'; LOTE.baseN=REPS.length; LOTE.pdListo=false; LOTE.pdOk=0; LOTE.pdSinMatch=0;
@@ -3948,7 +3951,7 @@ async function dbCargarRepresentantes(){
 async function dbGuardarRepresentantes(parsed){
   if(!SB_OK||!sb) return {ok:false,msg:'sin conexión a Supabase'};
   try{
-    const filas=parsed.map(p=>({codigo:p.cod,pais:p.pais,zona:p.zona,nombre:p.nombre,estatus:p.estatus,
+    const filas=parsed.map(p=>({codigo:p.cod,pais:p.pais,zona:p.zona,sector:p.sector,nombre:p.nombre,estatus:p.estatus,
       pd:p.inact,inactividades:p.inactividadesInfo,balance:p.balance,cedula:p.cedula,campania:p.camp}));
 
     // Carga ATÓMICA del lado del servidor: o entra todo, o no entra nada.
