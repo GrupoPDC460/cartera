@@ -4070,7 +4070,9 @@ async function dbEmitirCarta(rep,tipo,gestorNombre,emitidaPor){
     const {data:num,error:e1}=await sb.rpc('cartera_siguiente_correlativo',{p_pais:rep.pais});
     if(e1) throw e1;
     const p=PAISES[rep.pais];
-    const ref=`${p.cod}.102.${rep.zona}.${rep.cod}.${(parseInt(String(rep.cod).slice(-4))%90000+10000)}`;
+    if(!p) return {num:'—',db:false,err:`país no reconocido ("${rep.pais==null?'vacío':rep.pais}") · corrige la base`};
+    const sufijo=parseInt(String(rep.cod).replace(/\D/g,'').slice(-4),10);
+    const ref=`${p.cod}.102.${rep.zona||'000'}.${rep.cod}.${isNaN(sufijo)?'00000':(sufijo%90000+10000)}`;
     const v=tipo==='cobro'?variantePorPD(rep.inact,rep.estatus):null;
     const {error:e2}=await sb.from('cartera_cartas').insert({
       num_correlativo:num,ref_archivo:ref,rep_codigo:rep.cod,pais:rep.pais,tipo:tipo,
@@ -4185,9 +4187,19 @@ async function dbSubirRecopilacion(gestorNombre,csvText,nCodigos){
     const {data:u}=await sb.from('cartera_usuarios').select('id').eq('nombre',gestorNombre).single();
     if(!u) return false;
     const hoy=fechaHoyLocal();
-    await sb.from('cartera_recopilacion').delete().eq('gestor_id',u.id).eq('fecha',hoy); // reemplaza SU subida del día
-    const {error}=await sb.from('cartera_recopilacion').insert({gestor_id:u.id,fecha:hoy,n_codigos:nCodigos,archivo_path:csvText,estado:'recibido'});
-    return !error;
+    // upsert: si el gestor ya subió hoy, REEMPLAZA su fila en una sola operación.
+    // Antes era delete + insert, y si el delete fallaba en silencio quedaba duplicado.
+    const {error}=await sb.from('cartera_recopilacion')
+      .upsert({gestor_id:u.id,fecha:hoy,n_codigos:nCodigos,archivo_path:csvText,estado:'recibido',subido_en:new Date().toISOString()},
+              {onConflict:'gestor_id,fecha'});
+    if(error){
+      // si aún no existe el índice único en la base, se cae al método anterior
+      const {error:eDel}=await sb.from('cartera_recopilacion').delete().eq('gestor_id',u.id).eq('fecha',hoy);
+      if(eDel) return false;
+      const {error:eIns}=await sb.from('cartera_recopilacion').insert({gestor_id:u.id,fecha:hoy,n_codigos:nCodigos,archivo_path:csvText,estado:'recibido'});
+      return !eIns;
+    }
+    return true;
   }catch(e){return false;}
 }
 async function dbCargarRecopilaciones(){
