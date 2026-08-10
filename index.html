@@ -1788,50 +1788,64 @@ function viewUpload(){
 }
 /* --- semáforo del lote: luz verde solo cuando base + consolidado están listos --- */
 function renderSemaforo(){
-  const el=document.getElementById('semaforoLote'); if(!el) return;
-  const baseOk=REPS.length>0, baseN=REPS.length;
-  const porPais={}; REPS.forEach(r=>{const k=r.pais||'—';porPais[k]=(porPais[k]||0)+1;});
-  const paisesTxt=Object.entries(porPais).map(([iso,n])=>`${(PAISES[iso]||{}).nombre||iso} ${n}`).join(' · ');
-  const origenTxt=LOTE.baseOrigen==='archivo'?'✔ cargada hoy desde archivo'
-    :(LOTE.baseOrigen==='nube'?'⚠ traída de la nube · confirma que sea la de HOY':'');
+  const el=_el('semaforoLote');
+  if(!el||typeof el.innerHTML==='undefined') return;
+  const baseN=REPS.length, hayBase=baseN>0;
+  const enNube=(LOTE.nubeEstado==='ok');
+  const nubeMal=(LOTE.nubeEstado==='error');
+  const guardando=(LOTE.nubeEstado==='guardando');
   const total=LOTE.pdOk+LOTE.pdSinMatch;
-  const ratioMal=total>0?LOTE.pdSinMatch/total:0;
-  const pdMalo=LOTE.pdListo&&ratioMal>0.5;
+  const pdMalo=LOTE.pdListo&&total>0&&(LOTE.pdSinMatch/total)>0.5;
 
-  let l1c,l1t;
-  if(baseOk){l1c='var(--ok)';l1t=`<b>Base cargada</b> · ${baseN} cuentas${paisesTxt?` · ${paisesTxt}`:''}${origenTxt?`<div style="font-size:11px;color:var(--txt-3);margin-top:2px">${origenTxt}</div>`:''}`;}
-  else{l1c='var(--bad)';l1t='<b>Sin base</b> · usa el <b>paso 1</b> para subir la base del día';}
+  let titulo,detalle,queHacer,color,fondo,borde;
 
-  let l2c,l2t;
-  if(LOTE.nubeEstado==='ok'){l2c='var(--ok)';l2t=`<b>Guardada en línea</b> · ${LOTE.enNube} cuentas verificadas en la nube`;}
-  else if(LOTE.nubeEstado==='guardando'){l2c='var(--accent)';l2t='<b>Guardando en la nube…</b>';}
-  else if(LOTE.nubeEstado==='error'){l2c='var(--bad)';l2t=`<b>NO se guardó en línea</b> · ${LOTE.nubeMsg}<div style="font-size:11px;color:var(--txt-3);margin-top:2px">La base está solo en este navegador. Vuelve a subirla o revisa la conexión.</div>`;}
-  else if(LOTE.baseOrigen==='nube'){l2c='var(--ok)';l2t=`<b>Leída de la nube</b> · ${REPS.length} cuentas`;}
-  else{l2c='var(--txt-3)';l2t='<b>Sin guardar en línea</b> · sube la base en el paso 1';}
+  if(!SB_OK){
+    titulo='NO GENERES CARTAS';
+    detalle='No hay conexión con la base en línea.';
+    queHacer='Recarga la página. Si sigue igual, avisa antes de trabajar.';
+    color='var(--bad)'; fondo='rgba(251,113,133,.12)'; borde='rgba(251,113,133,.45)';
+  } else if(!hayBase){
+    titulo='FALTA EL PASO 1';
+    detalle='Todavía no has subido la base del query.';
+    queHacer='Pulsa "1 · Elegir base (query)" y sube el Excel.';
+    color='var(--accent)'; fondo='rgba(96,165,250,.10)'; borde='rgba(96,165,250,.32)';
+  } else if(guardando){
+    titulo='ESPERA UN MOMENTO';
+    detalle='Guardando '+baseN+' cuentas en línea…';
+    queHacer='No cierres la página. En unos segundos te confirmo.';
+    color='var(--accent)'; fondo='rgba(96,165,250,.10)'; borde='rgba(96,165,250,.32)';
+  } else if(nubeMal){
+    titulo='NO GENERES CARTAS';
+    detalle='La base quedó solo en esta pantalla, NO se guardó en línea.';
+    queHacer='Vuelve a subir la base en el paso 1 antes de generar.';
+    color='var(--bad)'; fondo='rgba(251,113,133,.12)'; borde='rgba(251,113,133,.45)';
+  } else if(LOTE.baseOrigen==='nube'&&!LOTE.pdListo){
+    titulo='REVISA LA BASE';
+    detalle='Estas '+baseN+' cuentas son de una carga anterior, no del archivo de hoy.';
+    queHacer='Sube la base de HOY en el paso 1.';
+    color='var(--warn)'; fondo='rgba(251,191,36,.12)'; borde='rgba(251,191,36,.35)';
+  } else if(!LOTE.pdListo){
+    titulo='FALTA EL PASO 2';
+    detalle='Base lista: '+baseN+' cuentas guardadas en línea.';
+    queHacer='Ahora sube el consolidado de los gestores.';
+    color='var(--accent)'; fondo='rgba(96,165,250,.10)'; borde='rgba(96,165,250,.32)';
+  } else if(pdMalo){
+    titulo='NO GENERES TODAVÍA';
+    detalle='Solo '+LOTE.pdOk+' de '+total+' cuentas del consolidado están en la base.';
+    queHacer='La base no corresponde al consolidado. Sube la base correcta en el paso 1.';
+    color='var(--bad)'; fondo='rgba(251,113,133,.12)'; borde='rgba(251,113,133,.45)';
+  } else {
+    titulo='TODO EN ORDEN · PUEDES GENERAR';
+    detalle=baseN+' cuentas guardadas en línea · '+LOTE.pdOk+' cruzadas con el consolidado'+(LOTE.pdSinMatch?' · '+LOTE.pdSinMatch+' sin cruzar':'');
+    queHacer='';
+    color='var(--ok)'; fondo='rgba(52,211,153,.12)'; borde='rgba(52,211,153,.40)';
+  }
 
-  let l3c,l3t;
-  if(!LOTE.pdListo){l3c='var(--txt-3)';l3t='<b>Consolidado pendiente</b> · usa el <b>paso 2</b> para subir el PD';}
-  else if(pdMalo){l3c='var(--warn)';l3t=`<b>Casi nada coincidió</b> · ${LOTE.pdOk} casadas / ${LOTE.pdSinMatch} sin coincidencia — ¿cargaste la base de HOY antes de fusionar?`;}
-  else{l3c='var(--ok)';l3t=`<b>Consolidado fusionado</b> · ${LOTE.pdOk} casadas${LOTE.pdSinMatch?` · ${LOTE.pdSinMatch} sin coincidencia`:''}`;}
-
-  const nubeMal=LOTE.nubeEstado==='error';
-  let vTxt,vCol,vBg,vBd;
-  if(nubeMal){vTxt='🔴 La base NO está en línea · vuelve a subirla antes de generar';vCol='var(--bad)';vBg='rgba(251,113,133,.10)';vBd='rgba(251,113,133,.30)';}
-  else if(baseOk&&LOTE.pdListo&&!pdMalo){vTxt='✅ LISTO PARA FUSIONAR / GENERAR';vCol='var(--ok)';vBg='rgba(52,211,153,.10)';vBd='rgba(52,211,153,.35)';}
-  else if(baseOk&&!LOTE.pdListo){vTxt='🔵 Base lista · ahora sube el consolidado (paso 2)';vCol='var(--accent)';vBg='rgba(96,165,250,.10)';vBd='rgba(96,165,250,.30)';}
-  else if(baseOk&&pdMalo){vTxt='⚠️ Revisa la base antes de generar · casi nada casó';vCol='var(--warn)';vBg='rgba(251,191,36,.10)';vBd='rgba(251,191,36,.30)';}
-  else{vTxt='🔴 Empieza por el paso 1: sube la base del día';vCol='var(--bad)';vBg='rgba(251,113,133,.10)';vBd='rgba(251,113,133,.30)';}
-
-  const luz=(color,texto)=>`<div style="display:flex;gap:10px;align-items:flex-start;padding:11px 13px;border-radius:11px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.06)">
-    <span style="width:13px;height:13px;border-radius:50%;background:${color};box-shadow:0 0 10px ${color};flex:0 0 auto;margin-top:2px"></span>
-    <span style="font-size:12.5px;color:var(--txt-2);line-height:1.45">${texto}</span></div>`;
-
-  el.innerHTML=`<div style="display:grid;gap:9px">
-    ${luz(l1c,l1t)}
-    ${luz(l2c,l2t)}
-    ${luz(l3c,l3t)}
-    <div style="text-align:center;font-weight:700;font-size:13px;padding:10px;border-radius:11px;color:${vCol};background:${vBg};border:1px solid ${vBd}">${vTxt}</div>
-  </div>`;
+  el.innerHTML='<div style="padding:15px 17px;border-radius:13px;background:'+fondo+';border:1.5px solid '+borde+'">'
+    +'<div style="font-weight:800;font-size:15px;color:'+color+';letter-spacing:.3px">'+titulo+'</div>'
+    +'<div style="font-size:13px;color:var(--txt-2);margin-top:6px;line-height:1.5">'+detalle+'</div>'
+    +(queHacer?'<div style="font-size:12.5px;color:var(--txt-3);margin-top:7px;line-height:1.5">→ '+queHacer+'</div>':'')
+    +'</div>';
 }
 /* ============ ASIGNACIÓN MANUAL DE CARTAS ============
    Permite asignar cuentas a un gestor una por una o por lote.
