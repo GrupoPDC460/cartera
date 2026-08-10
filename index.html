@@ -2399,11 +2399,14 @@ function solicitadoBadge(r){
 }
 function construirPrev(){
   REPS.forEach(r=>{ r.prev=[]; });
-  const idx={}; REPS.forEach(r=>{ idx[String(r.cod).trim()]=r; });   // índice por código (texto), robusto a número/texto y a país
+  // índice por CÓDIGO + PAÍS: un mismo código puede existir en dos países
+  const idx={}; REPS.forEach(r=>{ idx[claveCuenta(r.cod,r.pais)]=r; });
   CARTAS.forEach(c=>{
     if(c.estado==='rechazada') return;               // una carta rechazada NO bloquea re-generar
-    const rep=idx[String(c.cod).trim()]; if(!rep) return;
     const sr=(c.snapshot&&c.snapshot.rep)||{};
+    const paisCarta=c.pais||sr.pais;
+    let rep=idx[claveCuenta(c.cod,paisCarta)];
+    if(!rep) return;
     rep.prev.push({tipo:c.tipo,
       camp:(sr.camp!=null?sr.camp:(sr.campania!=null?sr.campania:rep.camp)),
       pd:(sr.inact!=null?+sr.inact:0), estatus:sr.estatus||rep.estatus});
@@ -3921,11 +3924,20 @@ window.addEventListener('unhandledrejection',ev=>{
 async function dbCargarRepresentantes(){
   if(!SB_OK||!sb) return false;
   try{
-    const {data,error}=await sb.from('cartera_representantes').select('*').order('id',{ascending:true}).limit(3000);
-    if(error) return false;              // error real de conexión -> conserva lo que haya
+    // Trae TODOS los representantes por páginas (antes .limit(3000))
+    const data=[]; const TAM=1000;
+    for(let desde=0; ; desde+=TAM){
+      const {data:pag,error}=await sb.from('cartera_representantes').select('*')
+        .order('id',{ascending:true}).range(desde,desde+TAM-1);
+      if(error) return false;            // error real de conexión -> conserva lo que haya
+      if(!pag||!pag.length) break;
+      data.push(...pag);
+      if(pag.length<TAM) break;
+      if(desde>60000) break;             // tope de seguridad
+    }
     DEMO_ACTIVO=false;                   // ya hablamos con la BD: nada de demo
     REPS.length=0;                       // conectó bien: la BD es la verdad
-    if(!data||!data.length) return true;  // tabla vacía = SIN cuentas (no es demo)
+    if(!data.length) return true;         // tabla vacía = SIN cuentas (no es demo)
     data.forEach(r=>REPS.push({cod:r.codigo,pais:r.pais,zona:r.zona||'—',nombre:r.nombre||'(sin nombre)',
       estatus:r.estatus||'A',inact:r.pd||0,balance:parseFloat(r.balance)||0,camp:r.campania||'—',
       cedula:r.cedula||'—',prev:[]}));
@@ -3966,8 +3978,19 @@ async function dbGuardarRepresentantes(parsed){
 async function dbCargarCartas(){
   if(!SB_OK||!sb) return false;
   try{
-    const {data,error}=await sb.from('cartera_cartas').select('*').order('creada_en',{ascending:false}).limit(1000);
-    if(error) return false;
+    // Trae TODAS las cartas por páginas. Antes usaba .limit(1000): con más de
+    // mil cartas, las cuentas de las restantes reaparecían como "sin generar"
+    // y se podían emitir duplicados.
+    const data=[]; const TAM=1000;
+    for(let desde=0; ; desde+=TAM){
+      const {data:pag,error}=await sb.from('cartera_cartas').select('*')
+        .order('creada_en',{ascending:false}).range(desde,desde+TAM-1);
+      if(error) return false;
+      if(!pag||!pag.length) break;
+      data.push(...pag);
+      if(pag.length<TAM) break;
+      if(desde>60000) break;            // tope de seguridad
+    }
     CARTAS.length=0;
     (data||[]).forEach(c=>{
       CARTAS.push({num:c.num_correlativo,cod:c.rep_codigo,pais:c.pais,tipo:c.tipo,variante:c.variante,gestor:(c.snapshot&&c.snapshot.gestor)||'—',
