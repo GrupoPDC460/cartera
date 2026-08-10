@@ -2665,12 +2665,29 @@ function fillTokens(texto,c){
     .replace(/\{\{DOCUMENTO\}\}/g,c.doc).replace(/\{\{PLAZO\}\}/g,c.plazo)
     .replace(/\{\{TELEFONO\}\}/g,c.tel).replace(/\{\{CANALES_PAGO\}\}/g,c.canales);
 }
+/* fecha en texto legal: "10 de agosto de 2026" · acepta Date o 'YYYY-MM-DD' */
+function fechaLarga(v){
+  const M=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  let d;
+  if(v instanceof Date) d=v;
+  else if(typeof v==='string'&&/^\d{4}-\d{2}-\d{2}/.test(v)){
+    const p=v.slice(0,10).split('-'); d=new Date(+p[0],+p[1]-1,+p[2]);   // sin desfase de zona horaria
+  } else d=new Date();
+  if(isNaN(d.getTime())) d=new Date();
+  return `${d.getDate()} de ${M[d.getMonth()]} de ${d.getFullYear()}`;
+}
+/* fecha real de una carta ya emitida (por correlativo); si no existe, hoy */
+function fechaDeCarta(num){
+  if(!num) return new Date();
+  const c=(CARTAS||[]).find(x=>x.num===num);
+  return (c&&c.fecha)?c.fecha:new Date();
+}
 function correlativo(rep,num){return num||`${rep.pais}-2026-0${100+(parseInt(rep.cod.slice(-3))%200)}`;}
-function letterHTML(rep,tipo,num){
+function letterHTML(rep,tipo,num,fechaCarta){
   const p=PAISES[rep.pais];
   const ctx={moneda:p.moneda,monto:rep.balance.toLocaleString('es-GT',{minimumFractionDigits:2,maximumFractionDigits:2}),
     nombre:rep.nombre,cod:rep.cod,zona:rep.zona,camp:rep.camp,entidad:p.entidad,ciudad:p.ciudad,
-    fecha:'27 de junio de 2026',doc:rep.cedula,tel:'+502 0000-0000',canales:'banco o entidad autorizada',
+    fecha:fechaLarga(fechaCarta),doc:rep.cedula,tel:'+502 0000-0000',canales:'banco o entidad autorizada',
     plazo:(tipo==='cobro'&&variantePorPD(rep.inact,rep.estatus).id==='requerimiento')?'5':'3'};
   let key,titulo=null,asunto=null,destinatario=true;
   if(tipo==='cobro'){const v=variantePorPD(rep.inact,rep.estatus);key=v.id;asunto=v.nombre;}
@@ -3170,7 +3187,7 @@ function nombreArchivoCarta(rep,tipo,num){
   return `${rep.cod}_${nombre}_${pais}_${fecha}_${tdoc}.pdf`;
 }
 async function renderCartaAPdf(rep,tipo,num){
-  const html=letterHTML(rep,tipo,num);
+  const html=letterHTML(rep,tipo,num,fechaDeCarta(num));
   const host=document.createElement('div');
   host.style.cssText='position:fixed;left:-9999px;top:0;width:850px;background:#fff';
   host.innerHTML=html;
@@ -3254,7 +3271,7 @@ function showLetter(cod,tipo,num){
     <div class="modal-h">${svg(ICO.letter,18)}<div><h3>${TIPOS[tipo].nombre}${variante?' · '+variante.nombre:''}</h3></div>
       <div class="x" onclick="closeModal()">${svg(ICO.x,16)}</div></div>
     <div class="modal-body">
-      ${letterHTML(rep,tipo,num)}
+      ${letterHTML(rep,tipo,num,fechaDeCarta(num))}
       <div class="preview-side">
         <div class="ps-sec"><div class="psl">Representante</div>
           <div class="ps-row"><span class="k">Código</span><span class="v">${rep.cod}</span></div>
