@@ -2097,6 +2097,15 @@ function fusionarPD(ev){
     LOTE.pdListo=true; LOTE.pdOk=res.ok; LOTE.pdSinMatch=res.sinMatch;
     if(REPS.length===0){ toast('bad','No hay base cargada · sube primero la base del día (paso 1)'); }
     else if((res.ok+res.sinMatch)>0 && res.sinMatch/(res.ok+res.sinMatch)>0.7){ toast('info','⚠ Casi nada coincidió · ¿cargaste la base de HOY antes del consolidado?'); }
+    // GUARDA el PD real en la nube. Antes solo vivía en memoria: al recargar
+    // volvía el PD viejo del query y las cuentas ya generadas reaparecían.
+    if(res.ok&&SB_OK&&sb){
+      dbGuardarRepresentantes(REPS).then(r=>{
+        if(r.ok){ LOTE.nubeEstado='ok'; LOTE.enNube=r.enNube; }
+        else { LOTE.nubeEstado='error'; LOTE.nubeMsg=r.msg||''; toast('bad','El PD no se guardó en la nube: '+(r.msg||'')); }
+        renderSemaforo();
+      });
+    }
     renderSemaforo();
     const P=res.prob||{paisIlegible:[],noEnBase:[],pdVacio:[],pdRaro:[]};
     const C=res.cnt||{paisIlegible:0,noEnBase:0,pdVacio:0,pdRaro:0};
