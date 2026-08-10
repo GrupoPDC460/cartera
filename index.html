@@ -1250,7 +1250,7 @@ function pdDeCarta(c){
   if(r&&(typeof r.inact==='number'||(r.inact!=null&&!isNaN(+r.inact)))) return +r.inact;
   return ({recordatorio:2,requerimiento:4,escalamiento:6,prejuridica:7})[c.variante]||null;
 }
-function lunesDe(f){ if(!f)return null; const d=new Date(f+'T00:00:00'); if(isNaN(d))return null; const off=(d.getDay()+6)%7; d.setDate(d.getDate()-off); return d.toISOString().slice(0,10); }
+function lunesDe(f){ if(!f)return null; const d=new Date(f+'T00:00:00'); if(isNaN(d))return null; const off=(d.getDay()+6)%7; d.setDate(d.getDate()-off); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 function cartasDF(){
   return CARTAS.filter(c=>
     (DF.pais==='todos'||c.pais===DF.pais) &&
@@ -2665,6 +2665,12 @@ function fillTokens(texto,c){
     .replace(/\{\{DOCUMENTO\}\}/g,c.doc).replace(/\{\{PLAZO\}\}/g,c.plazo)
     .replace(/\{\{TELEFONO\}\}/g,c.tel).replace(/\{\{CANALES_PAGO\}\}/g,c.canales);
 }
+/* fecha de HOY en hora local (no UTC) · evita que una carta emitida
+   por la tarde quede registrada con la fecha del día siguiente */
+function fechaHoyLocal(){
+  const d=new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
 /* fecha en texto legal: "10 de agosto de 2026" · acepta Date o 'YYYY-MM-DD' */
 function fechaLarga(v){
   const M=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
@@ -2821,7 +2827,7 @@ async function generarLote(){
     if(res.db){
       emitidas++;
       CARTAS.unshift({num:res.num,cod:rep.cod,pais:rep.pais,tipo:tGen,gestor:duenio,
-        fecha:new Date().toISOString().slice(0,10),autorizo:'—',entrega:'emitida',canal:null,evid:false,estado:'pendiente',
+        fecha:fechaHoyLocal(),autorizo:'—',entrega:'emitida',canal:null,evid:false,estado:'pendiente',
         emitidaPor:STATE.role.user,
         snapshot:{rep:Object.assign({},rep,{prev:[]}),gestor:duenio,emitidaPor:STATE.role.user}});
     } else { errores++; }
@@ -2961,7 +2967,7 @@ function exportarHist(){
   const ws=XLSX.utils.json_to_sheet(rows);
   ws['!cols']=[{wch:16},{wch:26},{wch:26},{wch:12},{wch:8},{wch:12},{wch:24},{wch:14},{wch:22},{wch:16},{wch:12},{wch:10}];
   const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Cartas');
-  XLSX.writeFile(wb,`cartera_historial_${new Date().toISOString().slice(0,10)}.xlsx`);
+  XLSX.writeFile(wb,`cartera_historial_${fechaHoyLocal()}.xlsx`);
   toast('ok',`Excel exportado · ${rows.length} cartas`);
 }
 function viewHist(){
@@ -3258,7 +3264,7 @@ async function descargarZip(){
   if(!generadas){closeModal();toast('info','No se pudo generar ningún PDF · faltan datos de la cuenta');return;}
   const blob=await zip.generateAsync({type:'blob'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
-  a.download=`cartera_lote_${new Date().toISOString().slice(0,10)}.zip`; a.click();
+  a.download=`cartera_lote_${fechaHoyLocal()}.zip`; a.click();
   closeModal(); toast('ok',`ZIP descargado · ${generadas} de ${lista.length} cartas`);
 }
 
@@ -3986,7 +3992,7 @@ async function dbEmitirCarta(rep,tipo,gestorNombre,emitidaPor){
     const v=tipo==='cobro'?variantePorPD(rep.inact,rep.estatus):null;
     const {error:e2}=await sb.from('cartera_cartas').insert({
       num_correlativo:num,ref_archivo:ref,rep_codigo:rep.cod,pais:rep.pais,tipo:tipo,
-      variante:v?v.id:null,fecha_emision:new Date().toISOString().slice(0,10),
+      variante:v?v.id:null,fecha_emision:fechaHoyLocal(),
       estado:'pendiente',entrega_estado:'emitida',
       snapshot:{rep:Object.assign({},rep,{prev:[]}),gestor:gestorNombre,emitidaPor:emitidaPor||gestorNombre,plantilla:getPlantilla(v?v.id:tipo)}});
     if(e2) throw e2;
@@ -4096,7 +4102,7 @@ async function dbSubirRecopilacion(gestorNombre,csvText,nCodigos){
   try{
     const {data:u}=await sb.from('cartera_usuarios').select('id').eq('nombre',gestorNombre).single();
     if(!u) return false;
-    const hoy=new Date().toISOString().slice(0,10);
+    const hoy=fechaHoyLocal();
     await sb.from('cartera_recopilacion').delete().eq('gestor_id',u.id).eq('fecha',hoy); // reemplaza SU subida del día
     const {error}=await sb.from('cartera_recopilacion').insert({gestor_id:u.id,fecha:hoy,n_codigos:nCodigos,archivo_path:csvText,estado:'recibido'});
     return !error;
@@ -4105,7 +4111,7 @@ async function dbSubirRecopilacion(gestorNombre,csvText,nCodigos){
 async function dbCargarRecopilaciones(){
   if(!SB_OK||!sb) return null;
   try{
-    const hoy=new Date().toISOString().slice(0,10);
+    const hoy=fechaHoyLocal();
     const {data,error}=await sb.from('cartera_recopilacion').select('gestor_id,n_codigos,archivo_path,subido_en,cartera_usuarios(nombre)').eq('fecha',hoy);
     if(error) return null;
     return (data||[]).map(r=>({nombre:(r.cartera_usuarios&&r.cartera_usuarios.nombre)||'—',n:r.n_codigos,csv:r.archivo_path,hora:String(r.subido_en||'').slice(11,16)}));
