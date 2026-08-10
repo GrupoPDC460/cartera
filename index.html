@@ -2536,6 +2536,7 @@ function viewGen(){
     else { porPaisResumen[iso].bloq++; const m=v.rsn.split(' · ')[0]; motivos[m]=(motivos[m]||0)+1; }
   });
   const resumenCarga=`
+  <div id="genFallos" style="display:none;margin-bottom:14px"></div>
   <div class="panel glass" style="margin-bottom:14px">
     <div class="panel-h"><div><h3>Resumen de esta carga</h3>
       <div style="font-size:12px;color:var(--txt-3);margin-top:3px">${visibles.length} cuentas pendientes · ${validos.length} listas · ${blocked} bloqueadas${ocultas>0?` · <span style="color:var(--teal)">${ocultas} ya generadas (ocultas)</span>`:''}</div></div>
@@ -2822,7 +2823,7 @@ async function generarLote(){
     <h3>Generando ${n} cartas</h3><p id="genmsg">Numerando con correlativo atómico…</p></div>`;
   document.getElementById('overlay').classList.add('show');
   const ring=document.getElementById('ring');
-  let emitidas=0, errores=0;
+  let emitidas=0, errores=0; const fallidas=[];
   for(let i=0;i<seleccion.length;i++){
     const rep=seleccion[i];
     const tGen=tipoEfectivo(rep)||'cobro';
@@ -2834,7 +2835,7 @@ async function generarLote(){
         fecha:fechaHoyLocal(),autorizo:'—',entrega:'emitida',canal:null,evid:false,estado:'pendiente',
         emitidaPor:STATE.role.user,
         snapshot:{rep:Object.assign({},rep,{prev:[]}),gestor:duenio,emitidaPor:STATE.role.user}});
-    } else { errores++; }
+    } else { errores++; fallidas.push({cod:rep.cod,pais:rep.pais,nombre:rep.nombre,err:res.err||'sin detalle'}); }
     const pct=Math.round(((i+1)/n)*100);
     const pc=document.getElementById('pct'),ms=document.getElementById('genmsg');
     if(pc)pc.textContent=pct+'%';
@@ -2844,7 +2845,25 @@ async function generarLote(){
   closeModal(); STATE.sel.clear();
   if(SB_OK&&emitidas) toast('ok',`${emitidas} cartas emitidas y guardadas · pendientes de autorización`);
   else if(!SB_OK) toast('info',`${n} cartas simuladas (sin conexión · no se guardaron)`);
-  if(errores) toast('info',`${errores} cartas no se pudieron guardar`);
+  if(errores){
+    // las que fallaron quedan seleccionadas para reintentar de una vez
+    fallidas.forEach(f=>STATE.sel.add(f.cod));
+    const detalle=fallidas.slice(0,6).map(f=>`${f.cod} (${f.pais}): ${f.err}`).join(' · ');
+    toast('bad',`${errores} cartas NO se guardaron · quedaron seleccionadas para reintentar`);
+    console.warn('Cartas no guardadas:',fallidas);
+    window.__fallidas=fallidas;
+    setTimeout(()=>{
+      const el=_el('genFallos');
+      if(el&&typeof el.innerHTML!=='undefined'){
+        if(el.style) el.style.display='block';
+        el.innerHTML=`<div style="padding:13px 15px;border-radius:11px;background:rgba(251,113,133,.10);border:1.5px solid rgba(251,113,133,.35)">
+          <div style="font-weight:800;font-size:13.5px;color:var(--bad)">${errores} cartas no se guardaron</div>
+          <div style="font-size:12.5px;color:var(--txt-2);margin-top:6px;line-height:1.55">${detalle}${fallidas.length>6?` … y ${fallidas.length-6} más`:''}</div>
+          <div style="font-size:12px;color:var(--txt-3);margin-top:7px">→ Ya quedaron seleccionadas. Pulsa <b>Generar lote</b> otra vez para reintentar solo esas.</div></div>`;
+      }
+    },100);
+    buildNav(); go('gen'); return;
+  }
   buildNav(); go(STATE.role.id==='super'?'auth':'hist');
 }
 
