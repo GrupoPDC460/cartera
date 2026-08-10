@@ -1769,6 +1769,7 @@ function viewUpload(){
     </div>
     <div id="semaforoLote" style="margin-top:14px"></div>
     <p style="font-size:11px;color:var(--txt-3);margin-top:11px;line-height:1.5">Columnas de la base: CODIGO REP · ESTATUS ACTUAL · N. INACTIVIDADES · PAIS · ZONA · SECTOR · NOMBRE_CONSEJERA · FECHA_NOMBRAMIENTO · BALANCE · CEDULA · CAMPANIA_ULTIMA_ORDEN · ID</p>
+    <div id="baseProgreso" style="display:none;margin-top:14px"></div>
     <div id="baseSummary"></div>
     <div id="pdSummary"></div>
   </div>
@@ -2241,59 +2242,132 @@ function parseFilaBase(row,headers){
   };
 }
 function loadDemo(){toast('ok','Usando datos de ejemplo · '+REPS.length+' representantes'); go('gen');}
+/* barra de progreso visible durante la carga */
+function barraProgreso(pct,txt,color){
+  const el=document.getElementById('baseProgreso'); if(!el) return;
+  el.style.display='block';
+  const c=color||'var(--accent)'; const p=Math.max(0,Math.min(100,Math.round(pct)));
+  el.innerHTML=`<div style="font-size:12.5px;color:var(--txt-2);margin-bottom:6px;display:flex;justify-content:space-between">
+      <span>${txt}</span><b style="color:${c}">${p}%</b></div>
+    <div style="height:9px;border-radius:99px;background:rgba(255,255,255,.07);overflow:hidden">
+      <div style="height:100%;width:${p}%;background:${c};border-radius:99px;transition:width .18s ease"></div></div>`;
+}
+const _pausa=()=>new Promise(r=>setTimeout(r,0));
+
 async function cargarBaseReal(ev){
   const file=ev.target.files[0]; if(!file)return;
   window.__archivoBase=file.name;
   document.getElementById('baseDropTitle').textContent='Leyendo '+file.name+'…';
+  document.getElementById('baseSummary').innerHTML='';
+  barraProgreso(5,'Leyendo el archivo…');
   try{
     const buf=await file.arrayBuffer();
+    await _pausa();
+    barraProgreso(15,'Abriendo la hoja de cálculo…');
     const wb=XLSX.read(buf,{type:'array',cellDates:true});
     const ws=wb.Sheets[wb.SheetNames[0]];
     const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:''});
-    const headers=rows[0];
-    const dataRows=rows.slice(1).filter(r=>r.some(c=>c!==''));
-    const parsed=[], errores=[];
-    dataRows.forEach((r,idx)=>{
-      const f=parseFilaBase(r,headers);
-      if(!f) errores.push(`Fila ${idx+2}: faltan código o país`);
-      else if(!f.pais) errores.push(`Fila ${idx+2}: país "${f.paisTexto}" no reconocido`);
-      else parsed.push(f);
-    });
-    if(parsed.length){
-      const _byc={}; parsed.forEach(p=>_byc[p.cod]=p); const _keys=Object.keys(_byc);
-      if(_keys.length<parsed.length){ parsed.length=0; _keys.forEach(k=>parsed.push(_byc[k])); } // evita duplicados si el archivo trae códigos repetidos
-      REPS.length=0; parsed.forEach(p=>REPS.push(p));
-      LOTE.baseOrigen='archivo'; LOTE.baseN=parsed.length; LOTE.pdListo=false; LOTE.pdOk=0; LOTE.pdSinMatch=0;
-      LOTE.nubeEstado='guardando'; LOTE.enNube=0; LOTE.nubeMsg='';
-      renderSemaforo();
-      dbGuardarRepresentantes(parsed).then(r=>{
-        if(r.ok){ LOTE.nubeEstado='ok'; LOTE.enNube=r.enNube; LOTE.nubeMsg='';
-          toast('ok',`Base guardada y verificada en la nube · ${r.enNube} cuentas`); }
-        else { LOTE.nubeEstado='error'; LOTE.enNube=r.enNube||r.escritas||0; LOTE.nubeMsg=r.msg||'error desconocido';
-          toast('bad','NO se guardó en la nube: '+(r.msg||'error')); }
-        renderSemaforo();
-      });
+    if(!rows.length) throw new Error('el archivo está vacío');
+
+    // Encuentra la fila de encabezados aunque el archivo traiga títulos arriba
+    let hIdx=-1;
+    for(let i=0;i<Math.min(rows.length,15);i++){
+      const hs=(rows[i]||[]).map(h=>HEADER_MAP[normHeader(h)]);
+      if(hs.includes('cod')&&hs.includes('pais')){hIdx=i;break;}
     }
+    if(hIdx<0){
+      barraProgreso(100,'No se reconocieron los encabezados','var(--bad)');
+      const vistos=(rows[0]||[]).map(h=>String(h)).filter(Boolean).slice(0,12).join(' · ');
+      document.getElementById('baseSummary').innerHTML=`<div class="panel glass" style="margin-top:14px">
+        <div style="padding:12px;border-radius:10px;background:rgba(251,113,133,.08);border:1px solid rgba(251,113,133,.25);font-size:12.5px;color:var(--txt-2)">
+        <b style="color:var(--bad)">No se encontraron las columnas CODIGO REP y PAIS.</b>
+        <div style="margin-top:6px">Encabezados detectados: <span style="color:var(--txt-3)">${vistos||'(ninguno)'}</span></div>
+        <div style="margin-top:6px">La base debe tener al menos <b>CODIGO REP</b> y <b>PAIS</b>.</div></div></div>`;
+      document.getElementById('baseDropTitle').textContent='Sube la base del query SQL (.xlsx o .csv)';
+      toast('bad','No se reconocieron los encabezados del archivo');
+      return;
+    }
+    const headers=rows[hIdx];
+    const dataRows=rows.slice(hIdx+1).filter(r=>r.some(c=>c!==''));
+
+    // Parseo con progreso real
+    const parsed=[], errores=[]; const mapa=new Map();
+    for(let i=0;i<dataRows.length;i++){
+      const f=parseFilaBase(dataRows[i],headers);
+      if(!f) errores.push(`Fila ${hIdx+2+i}: faltan código o país`);
+      else if(!f.pais) errores.push(`Fila ${hIdx+2+i}: país "${f.paisTexto}" no reconocido`);
+      else{
+        const k=claveCuenta(f.cod,f.pais);      // dedup por CÓDIGO + PAÍS (antes solo por código)
+        if(!mapa.has(k)){ mapa.set(k,f); parsed.push(f); }
+      }
+      if(i%150===0){ barraProgreso(15+(i/dataRows.length)*45,`Procesando ${i} de ${dataRows.length} filas…`); await _pausa(); }
+    }
+    barraProgreso(60,`${parsed.length} cuentas válidas · guardando…`);
+
     const porPais={}; parsed.forEach(p=>{porPais[p.pais]=(porPais[p.pais]||0)+1;});
     const sinPD=parsed.filter(p=>p.pdFaltante).length;
     document.getElementById('baseDropTitle').textContent='Sube la base del query SQL (.xlsx o .csv)';
-    document.getElementById('baseSummary').innerHTML=`
+
+    if(!parsed.length){
+      barraProgreso(100,'Ninguna fila válida','var(--bad)');
+      document.getElementById('baseSummary').innerHTML=`<div class="panel glass" style="margin-top:14px">
+        <div style="padding:12px;border-radius:10px;background:rgba(251,113,133,.08);border:1px solid rgba(251,113,133,.25);font-size:12.5px;color:var(--txt-2)">
+        <b style="color:var(--bad)">Se leyeron ${dataRows.length} filas pero ninguna quedó válida.</b>
+        <div style="margin-top:6px;max-height:150px;overflow:auto">${errores.slice(0,25).map(e=>`<div>⚠ ${e}</div>`).join('')}</div></div></div>`;
+      toast('bad',`${dataRows.length} filas leídas · 0 válidas`);
+      return;
+    }
+
+    // La base queda EN MEMORIA de inmediato: puedes trabajar aunque la nube falle
+    REPS.length=0; parsed.forEach(p=>REPS.push(p));
+    LOTE.baseOrigen='archivo'; LOTE.baseN=parsed.length; LOTE.pdListo=false; LOTE.pdOk=0; LOTE.pdSinMatch=0;
+    LOTE.nubeEstado='guardando'; LOTE.enNube=0; LOTE.nubeMsg='';
+    renderSemaforo(); setLoteStamp();
+    toast('ok',`Base cargada · ${parsed.length} cuentas · ya puedes fusionar`);
+
+    const pintar=(nubeHtml)=>{
+      document.getElementById('baseSummary').innerHTML=`
       <div class="panel glass" style="margin-top:14px">
         <div class="panel-h"><h3>Resultado de la carga</h3>
           <span class="pill ${errores.length?'warn':'ok'}">${svg(errores.length?ICO.bell:ICO.check,12)} ${parsed.length} cuentas válidas${errores.length?` · ${errores.length} con error`:''}</span></div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:${errores.length?'14px':'0'}">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+          <span class="mtag">Filas leídas: ${dataRows.length}</span>
+          <span class="mtag">Válidas: ${parsed.length}</span>
+          ${errores.length?`<span class="mtag" style="color:var(--warn)">Descartadas: ${errores.length}</span>`:''}
           ${Object.entries(porPais).map(([iso,n])=>`<span class="mtag">${(PAISES[iso]||{}).nombre||iso}: ${n}</span>`).join('')}
         </div>
-        ${errores.length?`<div style="padding:12px;border-radius:10px;background:rgba(251,113,133,.06);border:1px solid rgba(251,113,133,.18);font-size:12px;color:var(--txt-2);max-height:140px;overflow-y:auto">
+        ${nubeHtml}
+        ${errores.length?`<div style="margin-top:10px;padding:12px;border-radius:10px;background:rgba(251,113,133,.06);border:1px solid rgba(251,113,133,.18);font-size:12px;color:var(--txt-2);max-height:140px;overflow-y:auto">
           ${errores.slice(0,20).map(e=>`<div>⚠ ${e}</div>`).join('')}${errores.length>20?`<div>… y ${errores.length-20} más</div>`:''}</div>`:''}
         ${sinPD?`<div style="margin-top:10px;padding:12px;border-radius:10px;background:rgba(251,191,36,.07);border:1px solid rgba(251,191,36,.2);font-size:12.5px;color:var(--txt-2)">
-          ${svg(ICO.bell,14)} <b style="color:var(--warn)">${sinPD} cuentas sin PD explícito</b> — el query no trae el tramo exacto; los gestores deben indicarlo en la recopilación (columna PD). Se usó un valor provisional para no bloquear la vista previa.</div>`:''}
+          ${svg(ICO.bell,14)} <b style="color:var(--warn)">${sinPD} cuentas sin PD explícito</b> — lo indican los gestores en la recopilación (columna PD).</div>`:''}
       </div>`;
-    if(parsed.length){ toast('ok',`Base cargada · ${parsed.length} representantes reales`); setLoteStamp(); }
-    else toast('info','No se encontraron filas válidas · revisa los encabezados');
+    };
+    pintar(`<div style="padding:10px;border-radius:9px;background:rgba(96,165,250,.08);border:1px solid rgba(96,165,250,.25);font-size:12.5px;color:var(--txt-2)">⏳ Guardando en la nube…</div>`);
+    barraProgreso(75,'Guardando en la nube…');
+
+    const r=await dbGuardarRepresentantes(parsed);
+    if(r.ok){
+      LOTE.nubeEstado='ok'; LOTE.enNube=r.enNube; LOTE.nubeMsg='';
+      barraProgreso(100,`Listo · ${parsed.length} cuentas cargadas y guardadas`,'var(--ok)');
+      pintar(`<div style="padding:10px;border-radius:9px;background:rgba(52,211,153,.09);border:1px solid rgba(52,211,153,.28);font-size:12.5px;color:var(--ok)">✅ <b>Guardada y verificada en la nube: ${r.enNube} cuentas.</b></div>`);
+      toast('ok',`Base guardada y verificada · ${r.enNube} cuentas`);
+    }else{
+      LOTE.nubeEstado='error'; LOTE.enNube=r.enNube||0; LOTE.nubeMsg=r.msg||'error desconocido';
+      barraProgreso(100,`Cargada en memoria · NO se guardó en la nube`,'var(--warn)');
+      pintar(`<div style="padding:10px;border-radius:9px;background:rgba(251,191,36,.10);border:1px solid rgba(251,191,36,.30);font-size:12.5px;color:var(--txt-2)">
+        ⚠ <b style="color:var(--warn)">No se guardó en la nube:</b> ${r.msg||'error'}
+        <div style="margin-top:5px">Las <b>${parsed.length} cuentas están cargadas en esta sesión</b>, así que <b>sí puedes fusionar y generar cartas ahora</b>. Solo no cierres ni recargues la página.</div></div>`);
+      toast('bad','No se guardó en la nube · puedes trabajar en esta sesión');
+    }
+    renderSemaforo();
   }catch(e){
     document.getElementById('baseDropTitle').textContent='Sube la base del query SQL (.xlsx o .csv)';
-    toast('info','No se pudo leer el archivo: '+(e&&e.message?e.message:'formato no soportado'));
+    barraProgreso(100,'Error al leer el archivo','var(--bad)');
+    document.getElementById('baseSummary').innerHTML=`<div class="panel glass" style="margin-top:14px">
+      <div style="padding:12px;border-radius:10px;background:rgba(251,113,133,.08);border:1px solid rgba(251,113,133,.25);font-size:12.5px;color:var(--bad)">
+      <b>No se pudo leer el archivo:</b> ${(e&&e.message)?e.message:'formato no soportado'}</div></div>`;
+    toast('bad','No se pudo leer el archivo: '+((e&&e.message)?e.message:'formato no soportado'));
   }
 }
 
