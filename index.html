@@ -3735,6 +3735,7 @@ function viewRecop(){
     <div><div style="font-weight:600">${lab}</div><div style="font-size:11px;color:var(--txt-3)">${hora}</div></div></span>
     <span class="st ${done?'sent':'pend'}"><i></i>${done?'Cumplido':'Programado'}</span></div>`;
   document.getElementById('view').innerHTML=`
+    <div id="recopAvisos" style="display:none"></div>
   <div class="grid-2">
     <div class="panel glass">
       <div class="panel-h"><h3>Plantilla de recopilación</h3>
@@ -3840,9 +3841,42 @@ async function subirRecop(e){
   if(tieneEjemplos){
     toast('info','Ojo: tu archivo incluye códigos de ejemplo (1210802 / 2098771). Revísalo si no son cuentas reales.');
   }
+  // ---- VALIDACION DE LLAVES: codigo + pais, antes de enviar al consolidado ----
+  const problemas={paisMalo:[],codMalo:[],repetidos:[]};
+  const vistas=new Set(); const limpias=[];
+  validas.forEach(linea=>{
+    const pp=linea.split(',');
+    const codRaw=pp[0], paisRaw=pp[1];
+    const cod=normCodigo(codRaw);
+    const iso=paisAIso(paisRaw);
+    if(!/^[0-9]+$/.test(cod)){ problemas.codMalo.push(String(codRaw)); return; }
+    if(!iso){ problemas.paisMalo.push(codRaw+' · "'+paisRaw+'"'); return; }
+    const k=cod+'|'+iso;
+    if(vistas.has(k)){ problemas.repetidos.push(String(codRaw)); return; }
+    vistas.add(k);
+    limpias.push([cod,(PAISES[iso]&&PAISES[iso].nombre)||iso,pp[2]||'',pp[3]||''].join(','));
+  });
+  const hayProblemas=problemas.paisMalo.length||problemas.codMalo.length||problemas.repetidos.length;
+  if(hayProblemas){
+    const bloque=(t,arr,c)=>arr.length?`<div style="margin-top:8px;color:${c}">⚠ <b>${arr.length}</b> ${t}`
+      +`<div style="font-size:11px;color:var(--txt-3);margin-top:3px;line-height:1.6">${arr.slice(0,10).join(' · ')}${arr.length>10?` … y ${arr.length-10} más`:''}</div></div>`:'';
+    const el=_el('recopAvisos');
+    if(el&&typeof el.innerHTML!=='undefined'){
+      if(el.style) el.style.display='block';
+      el.innerHTML=`<div style="padding:13px 15px;border-radius:11px;background:rgba(251,191,36,.10);border:1.5px solid rgba(251,191,36,.35);margin-bottom:14px">`
+        +`<div style="font-weight:800;font-size:13.5px;color:var(--warn)">Revisa tu archivo antes de continuar</div>`
+        +bloque('con país no reconocido (escribe Guatemala, Honduras, Panamá…)',problemas.paisMalo,'var(--warn)')
+        +bloque('con código que no es un número',problemas.codMalo,'var(--warn)')
+        +bloque('repetidos (se dejó una sola vez)',problemas.repetidos,'var(--txt-3)')
+        +`<div style="font-size:12px;color:var(--txt-3);margin-top:8px">Se enviaron <b>${limpias.length}</b> cuentas válidas. Corrige las demás y vuelve a subir: se acumulan, no se pierde lo enviado.</div></div>`;
+    }
+  }
+  if(!limpias.length){ toast('bad','Ninguna fila es válida · revisa los códigos y los países'); viewRecop(); return; }
+
   STATE.recopSubida=true;
-  const ok=await dbSubirRecopilacion(STATE.role.user,'Codigo,Pais,PD,Tipo\n'+validas.join('\n'),validas.length);
-  toast('ok',`${validas.length} ${validas.length===1?'registro enviado':'registros enviados'} al consolidado${ok?' · guardado en Supabase':' (local)'}`);
+  const ok=await dbSubirRecopilacion(STATE.role.user,'Codigo,Pais,PD,Tipo\n'+limpias.join('\n'),limpias.length);
+  if(hayProblemas) toast('info',limpias.length+' enviadas · revisa el aviso de arriba');
+  else toast('ok',limpias.length+' registros enviados al consolidado'+(ok?' · guardado en la nube':' (local)'));
   viewRecop();
 }
 
