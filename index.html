@@ -2710,6 +2710,21 @@ function fechaHoyLocal(){
   const d=new Date();
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
+/* hora en la zona horaria del usuario · antes se cortaba el texto crudo y
+   mostraba la hora UTC (6 horas adelantada en Centroamérica) */
+function horaLocal(v){
+  if(!v) return '—';
+  const d=new Date(v);
+  if(isNaN(d.getTime())) return String(v).slice(11,16);
+  return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+/* convierte un instante (timestamptz) a la FECHA local YYYY-MM-DD */
+function fechaLocalDe(v){
+  if(!v) return '';
+  const d=new Date(v);
+  if(isNaN(d.getTime())) return String(v).slice(0,10);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
 /* fecha en texto legal: "10 de agosto de 2026" · acepta Date o 'YYYY-MM-DD' */
 function fechaLarga(v){
   const M=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
@@ -4115,7 +4130,7 @@ async function dbCargarCartas(){
     CARTAS.length=0;
     (data||[]).forEach(c=>{
       CARTAS.push({num:c.num_correlativo,cod:c.rep_codigo,pais:c.pais,tipo:c.tipo,variante:c.variante,gestor:(c.snapshot&&c.snapshot.gestor)||'—',
-        fecha:String(c.fecha_emision||c.creada_en||'').slice(0,10),autorizo:(c.snapshot&&c.snapshot.autorizo)||'—',
+        fecha:(c.fecha_emision?String(c.fecha_emision).slice(0,10):fechaLocalDe(c.creada_en)),autorizo:(c.snapshot&&c.snapshot.autorizo)||'—',
         entrega:c.entrega_estado||'emitida',canal:c.canal,evid:!!c.evidencia_path,evidPath:c.evidencia_path||null,respNota:c.respuesta_nota||null,estado:c.estado,
         tGerente:c.fecha_gerente||null,tEntrega:c.fecha_entrega||null,tRespuesta:c.fecha_respuesta||null,
         emitidaPor:(c.snapshot&&c.snapshot.emitidaPor)||null,dbId:c.id,snapshot:c.snapshot});
@@ -4270,7 +4285,7 @@ async function dbCargarRecopilaciones(){
     const hoy=fechaHoyLocal();
     const {data,error}=await sb.from('cartera_recopilacion').select('gestor_id,n_codigos,archivo_path,subido_en,cartera_usuarios(nombre)').eq('fecha',hoy);
     if(error) return null;
-    return (data||[]).map(r=>({nombre:(r.cartera_usuarios&&r.cartera_usuarios.nombre)||'—',n:r.n_codigos,csv:r.archivo_path,hora:String(r.subido_en||'').slice(11,16)}));
+    return (data||[]).map(r=>({nombre:(r.cartera_usuarios&&r.cartera_usuarios.nombre)||'—',n:r.n_codigos,csv:r.archivo_path,hora:horaLocal(r.subido_en)}));
   }catch(e){return null;}
 }
 async function dbReset(){
