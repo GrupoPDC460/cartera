@@ -3480,13 +3480,21 @@ async function descargarPDFUnico(cod,tipo,num){
 async function descargarZip(){
   const isSuper=STATE.role.id==='super';
   const mias=isSuper?CARTAS:CARTAS.filter(c=>(c.gestor||'').trim()===(STATE.role.user||'').trim());
-  let lista=mias.filter(c=>c.estado==='aprobada');
+  // Respeta los MISMOS filtros que se ven en pantalla (fechas, gestor).
+  // Antes descargaba TODAS las cartas aprobadas sin importar el filtro, así que
+  // con miles acumuladas se bajaba el histórico completo.
+  let base=mias;
+  if(HF.desde) base=base.filter(c=>String(c.fecha||'')>=HF.desde);
+  if(HF.hasta) base=base.filter(c=>String(c.fecha||'')<=HF.hasta);
+  if(isSuper&&HF.gestor&&HF.gestor!=='todos') base=base.filter(c=>c.gestor===HF.gestor);
+  let lista=base.filter(c=>c.estado==='aprobada');
+  const rango=(HF.desde||HF.hasta)?` en el rango ${HF.desde||'inicio'} → ${HF.hasta||'hoy'}`:'';
   if(!lista.length){
-    const pendientes=mias.filter(c=>c.estado==='pendiente').length;
+    const pendientes=base.filter(c=>c.estado==='pendiente').length;
     if(pendientes){
-      toast('info',`Tienes ${pendientes} carta(s) que aún no ha autorizado un supervisor. Solo se descargan las ya firmadas.`);
+      toast('info',`Tienes ${pendientes} carta(s)${rango} que aún no ha autorizado un supervisor. Solo se descargan las ya firmadas.`);
     }else{
-      toast('info','Aún no tienes cartas aprobadas para descargar.');
+      toast('info',`No hay cartas aprobadas${rango} para descargar.`);
     }
     return;
   }
@@ -3495,7 +3503,7 @@ async function descargarZip(){
       <circle id="zring" cx="45" cy="45" r="38" stroke="url(#gz)" stroke-width="6" fill="none" stroke-linecap="round" stroke-dasharray="239" stroke-dashoffset="239"/>
       <defs><linearGradient id="gz"><stop offset="0" stop-color="#2DD4BF"/><stop offset="1" stop-color="#38BDF8"/></linearGradient></defs></svg>
       <div class="pct" id="zpct">0%</div></div>
-    <h3>Empaquetando ${lista.length} cartas</h3><p id="zmsg">Generando PDFs…</p></div>`;
+    <h3>Empaquetando ${lista.length} cartas</h3><p id="zmsg">${rango?`Filtro:${rango}`:'Generando PDFs…'}</p></div>`;
   document.getElementById('overlay').classList.add('show');
   const zip=new JSZip();
   let generadas=0; const _zipInicio=Date.now();
@@ -3531,7 +3539,8 @@ async function descargarZip(){
   if(!generadas){closeModal();toast('info','No se pudo generar ningún PDF · faltan datos de la cuenta');return;}
   const blob=await zip.generateAsync({type:'blob'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
-  a.download=`cartera_lote_${fechaHoyLocal()}.zip`; a.click();
+  const sufijo=(HF.desde&&HF.hasta&&HF.desde!==HF.hasta)?`${HF.desde}_a_${HF.hasta}`:(HF.desde||HF.hasta||fechaHoyLocal());
+  a.download=`cartera_lote_${sufijo}.zip`; a.click();
   closeModal(); toast('ok',`ZIP descargado · ${generadas} de ${lista.length} cartas`);
 }
 
