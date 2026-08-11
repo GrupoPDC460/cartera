@@ -1145,6 +1145,7 @@ function buildNav(){
     {id:'recop',ic:ICO.down,t:'Recopilación'},
     ...(STATE.delegado===STATE.role.user?[{id:'upload',ic:ICO.upload,t:'Cargar base',badge:'★'}]:[]),
     {id:'hist',ic:ICO.hist,t:'Mis cartas'},
+    {id:'rechazadas',ic:ICO.block,t:'Cartas rechazadas',badge:(()=>{const n=CARTAS.filter(c=>c.estado==='rechazada'&&(c.gestor||'').trim()===(STATE.role.user||'').trim()).length;return n>0?String(n):'';})()},
     {id:'ayuda',ic:ICO.bolt,t:'Instrucciones'},
   ];
   document.getElementById('nav').innerHTML=items.map((i,k)=>`
@@ -1162,6 +1163,7 @@ const TITLES={dash:['Panel','Resumen general de la operación'],
   firma:['Mi firma','Se aplica a todas las cartas que autorices'],
   tasas:['Tasa de conversión','Unifica la cartera de los 6 países en dólares'],
   recop:['Recopilación','Plantilla de carga y cortes del día'],
+  rechazadas:['Cartas rechazadas','No fueron autorizadas · revisa el motivo y vuelve a solicitarlas'],
   perfil:['Mi perfil','Tu actividad y tus cartas'],
   plantillas:['Plantillas de cartas','Edita el texto · los campos del Excel no cambian'],
   ayuda:['Instrucciones de uso','Cómo usar el sistema y cómo solicitar las cartas']};
@@ -1172,7 +1174,7 @@ function go(v){
   document.getElementById('vTitle').textContent=TITLES[v][0];
   document.getElementById('vCrumb').textContent=TITLES[v][1];
   const el=document.getElementById('view'); el.classList.remove('fade');void el.offsetWidth;el.classList.add('fade');
-  ({dash:viewDash,upload:viewUpload,gen:viewGen,bloqueo:viewBloqueadas,auth:viewAuth,hist:viewHist,users:viewUsers,firma:viewFirma,tasas:viewTasas,recop:viewRecop,perfil:viewPerfil,plantillas:viewPlantillas,ayuda:viewAyuda}[v])();
+  ({dash:viewDash,upload:viewUpload,gen:viewGen,bloqueo:viewBloqueadas,auth:viewAuth,hist:viewHist,users:viewUsers,firma:viewFirma,tasas:viewTasas,recop:viewRecop,perfil:viewPerfil,plantillas:viewPlantillas,rechazadas:viewRechazadas,ayuda:viewAyuda}[v])();
 }
 
 /* ============ INSTRUCCIONES DE USO ============ */
@@ -3016,8 +3018,9 @@ async function approve(btn,num){
 }
 async function reject(btn,num){
   const card=btn.closest('.auth-card');
-  await dbRechazar(num);
-  const cc=CARTAS.find(x=>x.num===num); if(cc)cc.estado='rechazada';
+  const motivo=(prompt('¿Por qué se rechaza esta carta?\n(El gestor lo verá en "Cartas rechazadas")','')||'').trim();
+  await dbRechazar(num,motivo);
+  const cc=CARTAS.find(x=>x.num===num); if(cc){cc.estado='rechazada';cc.motivo=motivo||'';}
   card.style.transition='.4s';card.style.opacity='0';card.style.transform='scale(.96)';
   buildNav();
   setTimeout(()=>{card.remove();toast('info',`${num} rechazada`);
@@ -3084,6 +3087,37 @@ function exportarHist(){
   const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Cartas');
   XLSX.writeFile(wb,`cartera_historial_${fechaHoyLocal()}.xlsx`);
   toast('ok',`Excel exportado · ${rows.length} cartas`);
+}
+/* Cartas que no fueron autorizadas · vista aparte para que no estorben en "Mis cartas" */
+function viewRechazadas(){
+  const isSuper=STATE.role.id==='super';
+  const mias=CARTAS.filter(c=>c.estado==='rechazada'&&(isSuper||(c.gestor||'').trim()===(STATE.role.user||'').trim()))
+    .sort((a,b)=>String(b.fecha||'').localeCompare(String(a.fecha||'')));
+  const cuerpo = mias.length ? `
+    <div class="panel glass">
+      <div class="panel-h"><div><h3>${mias.length} carta${mias.length===1?'':'s'} rechazada${mias.length===1?'':'s'}</h3>
+        <div style="font-size:12px;color:var(--txt-3);margin-top:3px">Estas cuentas quedaron libres · puedes volver a incluirlas en tu próxima recopilación</div></div></div>
+      <div style="overflow-x:auto"><table class="tbl"><thead><tr>
+        <th>CARTA</th><th>REPRESENTANTE</th><th>PAÍS</th><th>TIPO</th><th>FECHA</th><th>MOTIVO</th></tr></thead>
+        <tbody>${mias.map(c=>{
+          const rep=repDeCarta(c.cod,c.num)||{};
+          return `<tr>
+            <td style="font-family:var(--mono);font-size:11.5px;color:var(--txt-3)">${c.num||'—'}</td>
+            <td><b>${rep.nombre||c.cod}</b><div style="font-size:11px;color:var(--txt-3)">${c.cod}${rep.zona?` · Zona ${rep.zona}`:''}</div></td>
+            <td>${(PAISES[c.pais]&&PAISES[c.pais].nombre)||c.pais||'—'}</td>
+            <td>${({cobro:'Cobro',finiquito:'Finiquito',aldia:'Al día',saldo:'Saldo pendiente'})[c.tipo]||c.tipo||'—'}</td>
+            <td style="font-size:12px">${c.fecha||'—'}</td>
+            <td style="font-size:12px;color:var(--txt-3)">${c.motivo||'No autorizada por supervisión'}</td>
+          </tr>`;}).join('')}</tbody></table></div>
+    </div>`
+  : `<div class="panel glass" style="text-align:center;padding:44px 20px">
+      <div style="font-size:15px;font-weight:700;color:var(--ok)">No tienes cartas rechazadas</div>
+      <div style="font-size:13px;color:var(--txt-3);margin-top:7px">Todas tus cartas fueron autorizadas.</div></div>`;
+  document.getElementById('view').innerHTML=`
+    <div style="margin-bottom:14px;padding:12px 15px;border-radius:11px;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.25);font-size:12.5px;color:var(--txt-2)">
+      Aquí aparecen las cartas que <b>no fueron autorizadas</b>. No se enviaron a la representante.
+      Si crees que alguna debe emitirse, vuelve a incluir esa cuenta en tu recopilación.
+    </div>${cuerpo}`;
 }
 function viewHist(){
   const isSuper=STATE.role.id==='super';
@@ -3416,12 +3450,14 @@ async function descargarZip(){
     if(rep){
       try{
         const pdf=await renderCartaAPdf(rep,c.tipo,c.num);
-        // Organiza el ZIP en carpetas: País / Zona NNN / archivo.pdf
+        // Organiza el ZIP en carpetas: País / Zona NNN / Sector N / archivo.pdf
         const limpioCarpeta=t=>String(t||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Za-z0-9 ]/g,'').trim().replace(/\s+/g,'_');
         const carpetaPais=limpioCarpeta((PAISES[rep.pais]&&PAISES[rep.pais].nombre)||rep.pais)||'Sin_pais';
         const z=limpioCarpeta(rep.zona);
         const carpetaZona=(z&&z!=='')?`Zona_${z}`:'Sin_zona';
-        zip.file(`${carpetaPais}/${carpetaZona}/${nombreArchivoCarta(rep,c.tipo,c.num)}`,pdf.output('arraybuffer'));
+        const sc=limpioCarpeta(rep.sector);
+        const carpetaSector=(sc&&sc!==''&&sc!=='—')?`Sector_${sc}`:'Sin_sector';
+        zip.file(`${carpetaPais}/${carpetaZona}/${carpetaSector}/${nombreArchivoCarta(rep,c.tipo,c.num)}`,pdf.output('arraybuffer'));
         generadas++;
       }catch(e){}
     }
@@ -4170,6 +4206,7 @@ async function dbCargarCartas(){
     (data||[]).forEach(c=>{
       CARTAS.push({num:c.num_correlativo,cod:c.rep_codigo,pais:c.pais,tipo:c.tipo,variante:c.variante,gestor:(c.snapshot&&c.snapshot.gestor)||'—',
         fecha:(c.fecha_emision?String(c.fecha_emision).slice(0,10):fechaLocalDe(c.creada_en)),autorizo:(c.snapshot&&c.snapshot.autorizo)||'—',
+        motivo:(c.estado==='rechazada'?(c.respuesta_nota||''):''),
         entrega:c.entrega_estado||'emitida',canal:c.canal,evid:!!c.evidencia_path,evidPath:c.evidencia_path||null,respNota:c.respuesta_nota||null,estado:c.estado,
         tGerente:c.fecha_gerente||null,tEntrega:c.fecha_entrega||null,tRespuesta:c.fecha_respuesta||null,
         emitidaPor:(c.snapshot&&c.snapshot.emitidaPor)||null,dbId:c.id,snapshot:c.snapshot});
@@ -4208,9 +4245,14 @@ async function dbAprobar(num,quien){
     return !error;
   }catch(e){return false;}
 }
-async function dbRechazar(num){
+async function dbRechazar(num,motivo){
   if(!SB_OK||!sb) return false;
-  try{ const {error}=await sb.from('cartera_cartas').update({estado:'rechazada'}).eq('num_correlativo',num); return !error; }catch(e){return false;}
+  try{
+    const upd={estado:'rechazada'};
+    if(motivo){ upd.respuesta_nota=motivo; }   // el gestor lo ve en "Cartas rechazadas"
+    const {error}=await sb.from('cartera_cartas').update(upd).eq('num_correlativo',num);
+    return !error;
+  }catch(e){return false;}
 }
 async function dbEntrega(num,estado,canal,evidPath,nota){
   if(!SB_OK||!sb) return false;
