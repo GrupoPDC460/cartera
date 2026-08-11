@@ -3188,9 +3188,16 @@ function viewHist(){
   const rank=c=>c.estado==='aprobada'?0:(c.estado==='pendiente'?1:2);
   lista.sort((a,b)=>rank(a)-rank(b)||String(b.fecha||'').localeCompare(String(a.fecha||'')));
   const misTodas=isSuper?CARTAS:CARTAS.filter(c=>(c.gestor||'').trim()===(STATE.role.user||'').trim());
-  const aprobadasDisp=misTodas.filter(c=>c.estado==='aprobada').length;
-  const pendientesDisp=misTodas.filter(c=>c.estado==='pendiente').length;
-  const rechazadasDisp=misTodas.filter(c=>c.estado==='rechazada').length;
+  // Los contadores reflejan el RANGO DE FECHAS elegido, para que el número del
+  // botón coincida siempre con lo que realmente se va a descargar.
+  let enRango=misTodas;
+  if(HF.desde) enRango=enRango.filter(c=>String(c.fecha||'')>=HF.desde);
+  if(HF.hasta) enRango=enRango.filter(c=>String(c.fecha||'')<=HF.hasta);
+  if(isSuper&&HF.gestor&&HF.gestor!=='todos') enRango=enRango.filter(c=>c.gestor===HF.gestor);
+  const aprobadasDisp=enRango.filter(c=>c.estado==='aprobada').length;
+  const pendientesDisp=enRango.filter(c=>c.estado==='pendiente').length;
+  const rechazadasDisp=enRango.filter(c=>c.estado==='rechazada').length;
+  const totalRango=enRango.filter(c=>c.estado!=='rechazada').length;
   // índice donde empiezan las que ESPERAN FIRMA (pendientes reales, no rechazadas)
   const corte=lista.findIndex(c=>c.estado==='pendiente');
   HIST_LISTA=lista;
@@ -3209,6 +3216,12 @@ function viewHist(){
     <div class="field"><label>Hasta</label><input type="date" class="input" style="min-width:150px" value="${HF.hasta}" onchange="HF.hasta=this.value;viewHist()"></div>
     ${isSuper?`<div class="field"><label>Gestor</label><select class="select" onchange="HF.gestor=this.value;viewHist()"><option value="todos">Todos</option>${GESTORES.map(g=>`<option ${HF.gestor===g.nombre?'selected':''}>${g.nombre.split(' ').slice(0,3).join(' ')}</option>`).join('')}</select></div>`:''}
     ${(HF.desde||HF.hasta)?`<div class="field"><label>&nbsp;</label><button class="btn ghost" onclick="HF.desde='';HF.hasta='';viewHist()">Quitar filtro de fecha</button></div>`:''}
+    <div class="field"><label>&nbsp;</label>
+      <div style="padding:9px 14px;border-radius:10px;background:rgba(45,212,191,.10);border:1px solid rgba(45,212,191,.28);white-space:nowrap">
+        <span style="font-size:11px;color:var(--txt-3);display:block;line-height:1.2">${(HF.desde||HF.hasta)?((HF.desde&&HF.hasta&&HF.desde===HF.hasta)?fmtFecha(HF.desde):`${HF.desde?fmtFecha(HF.desde):'inicio'} → ${HF.hasta?fmtFecha(HF.hasta):'hoy'}`):'Todas las fechas'}</span>
+        <b style="font-size:14px;color:var(--teal)">${totalRango} carta${totalRango===1?'':'s'}</b>
+        <span style="font-size:11px;color:var(--txt-3)"> · ${aprobadasDisp} lista${aprobadasDisp===1?'':'s'}</span>
+      </div></div>
     <div style="flex:1"></div>
     <div class="field"><label>&nbsp;</label><button class="btn primary" ${aprobadasDisp?'':'disabled'} onclick="descargarZip()">${svg(ICO.down)} Descargar aprobadas (ZIP)${aprobadasDisp?` · ${aprobadasDisp}`:''}</button></div>
     <div class="field"><label>&nbsp;</label><button class="btn ghost" onclick="exportarHist()">${svg(ICO.down)} Excel</button></div>
