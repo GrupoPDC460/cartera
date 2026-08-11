@@ -3294,26 +3294,34 @@ function nombreArchivoCarta(rep,tipo,num){
   const zona=limpio(rep.zona)||'SZ';                     // zona al final
   return `${rep.cod}_${nombre}_${pais}_${fecha}_${tdoc}_${zona}.pdf`;
 }
+/* Calidad del PDF · escala 1.5 mantiene el texto nítido y es ~45% más rápido
+   que escala 2 (menos píxeles que dibujar y que comprimir). */
+const PDF_ESCALA=1.5, PDF_CALIDAD=0.82;
+let _hostPdf=null;
 async function renderCartaAPdf(rep,tipo,num){
   const html=letterHTML(rep,tipo,num,fechaDeCarta(num));
-  const host=document.createElement('div');
-  host.style.cssText='position:fixed;left:-9999px;top:0;width:850px;background:#fff';
+  // se reutiliza el mismo contenedor en vez de crearlo y destruirlo en cada carta
+  if(!_hostPdf){
+    _hostPdf=document.createElement('div');
+    _hostPdf.style.cssText='position:fixed;left:-9999px;top:0;width:850px;background:#fff';
+    document.body.appendChild(_hostPdf);
+  }
+  const host=_hostPdf;
   host.innerHTML=html;
   const el=host.querySelector('.letter-frame');
   el.style.width='800px'; el.style.boxShadow='none'; el.style.borderRadius='0';
-  document.body.appendChild(host);
   await new Promise(r=>{const imgs=host.querySelectorAll('img');let n=imgs.length;if(!n)return r();
     imgs.forEach(im=>{if(im.complete)n--;else im.onload=im.onerror=()=>{n--;if(n<=0)r();};});if(n<=0)r();});
-  const canvas=await html2canvas(el,{scale:2,backgroundColor:'#ffffff',useCORS:true});
-  document.body.removeChild(host);
+  const canvas=await html2canvas(el,{scale:PDF_ESCALA,backgroundColor:'#ffffff',useCORS:true,
+    logging:false,imageTimeout:0,removeContainer:true});
   const {jsPDF}=window.jspdf;
-  const pdf=new jsPDF({unit:'pt',format:'letter'});
+  const pdf=new jsPDF({unit:'pt',format:'letter',compress:true});
   const pw=pdf.internal.pageSize.getWidth(), ph=pdf.internal.pageSize.getHeight();
   let imgW=pw, imgH=canvas.height*(imgW/canvas.width);
   let offsetX=0, offsetY=0;
   if(imgH>ph){ const f=ph/imgH; imgW=imgW*f; imgH=ph; offsetX=(pw-imgW)/2; }
   else { offsetY=(ph-imgH)/2*0.35; } // pequeño respiro superior si la carta queda corta
-  pdf.addImage(canvas.toDataURL('image/jpeg',0.95),'JPEG',offsetX,offsetY,imgW,imgH);
+  pdf.addImage(canvas.toDataURL('image/jpeg',PDF_CALIDAD),'JPEG',offsetX,offsetY,imgW,imgH,undefined,'FAST');
   return pdf;
 }
 async function descargarPDFUnico(cod,tipo,num){
@@ -3347,7 +3355,7 @@ async function descargarZip(){
     <h3>Empaquetando ${lista.length} cartas</h3><p id="zmsg">Generando PDFs…</p></div>`;
   document.getElementById('overlay').classList.add('show');
   const zip=new JSZip();
-  let generadas=0;
+  let generadas=0; const _zipInicio=Date.now();
   for(let i=0;i<lista.length;i++){
     const c=lista[i];
     const rep=(c.snapshot&&c.snapshot.rep)||REPS.find(r=>r.cod===c.cod);
@@ -3365,7 +3373,14 @@ async function descargarZip(){
     }
     const pct=Math.round(((i+1)/lista.length)*100);
     const pc=document.getElementById('zpct'), ms=document.getElementById('zmsg'), rg=document.getElementById('zring');
-    if(pc)pc.textContent=pct+'%'; if(ms)ms.textContent=`PDF ${i+1} de ${lista.length} · agregado al ZIP`;
+    if(pc)pc.textContent=pct+'%';
+    if(ms){
+      const transcurrido=(Date.now()-_zipInicio)/1000;
+      const porCarta=transcurrido/(i+1);
+      const faltan=Math.round(porCarta*(lista.length-i-1));
+      const tiempo=faltan>90?`~${Math.ceil(faltan/60)} min restantes`:(faltan>2?`~${faltan} s restantes`:'casi listo');
+      ms.textContent=`PDF ${i+1} de ${lista.length} · ${tiempo}`;
+    }
     if(rg)rg.style.strokeDashoffset=239-(239*pct/100);
   }
   if(!generadas){closeModal();toast('info','No se pudo generar ningún PDF · faltan datos de la cuenta');return;}
