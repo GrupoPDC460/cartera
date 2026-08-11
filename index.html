@@ -2196,8 +2196,15 @@ function filasConsolidado(){
   return filas;
 }
 function downloadConsolidado(n){
-  const filas=filasConsolidado();
+  let filas=filasConsolidado();
   if(!filas.length){toast('info','No hay recopilaciones en el consolidado de hoy');return;}
+  // Mismo criterio que la consulta SQL: solo cuentas PENDIENTES (sin carta
+  // autorizada). Así el consolidado y el query siempre cuadran al fusionar.
+  const total=filas.length;
+  const yaListas=new Set((CARTAS||[]).filter(c=>c.estado==='aprobada').map(c=>normCodigo(c.cod)));
+  const pend=filas.filter(f=>!yaListas.has(normCodigo(f[0])));
+  if(pend.length) filas=pend;
+  const omitidas=total-filas.length;
   // BOM (\ufeff) para que Excel respete las tildes (Panamá, República, etc.)
   let csv='\ufeffCodigo,Pais,PD,Tipo\r\n';
   filas.forEach(f=>{csv+=f.map(c=>{
@@ -2207,7 +2214,7 @@ function downloadConsolidado(n){
   const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
   a.download='consolidado_recopilacion.csv';a.click();
-  toast('ok',`Consolidado descargado · ${filas.length} registros · listo para el query`);
+  toast('ok',`Consolidado descargado · ${filas.length} pendientes${omitidas?` · ${omitidas} ya procesadas se omitieron`:''}`);
 }
 /* ============ CARGA REAL DE LA BASE DEL QUERY ============ */
 const PAIS_A_ISO={GUATEMALA:'GT','EL SALVADOR':'SV',HONDURAS:'HD',NICARAGUA:'NC',PANAMA:'PA','PANAMÁ':'PA','REPUBLICA DOMINICANA':'RD','REPÚBLICA DOMINICANA':'RD','DOMINICANA':'RD','RD':'RD'};
@@ -2565,7 +2572,8 @@ function viewGen(){
     return `<tr class="${v.ok?'':'blocked'}">
       <td><div class="chk ${checked?'on':''} ${canSel?'':'dis'}" onclick="${canSel?`toggleSel('${r.cod}')`:''}">${svg(ICO.check,11)}</div></td>
       <td><div class="flag"><span class="fc">${r.pais}</span>${p.nombre}</div></td>
-      <td><div class="rep-nm">${r.nombre}</div><div class="rep-cod">${r.cod} · Zona ${r.zona}</div></td>
+      <td><div class="rep-nm">${r.nombre}</div><div class="rep-cod">${r.cod} · Zona ${r.zona}${r.sector&&r.sector!=='—'?` · Sector ${r.sector}`:''}</div></td>
+      <td><span style="font-size:12px;color:var(--txt-2)">${(()=>{const g=gestorDeCuenta(r);return g&&g!=='—'?g.split(' ').slice(0,2).join(' '):'<span style="color:var(--txt-3)">sin gestor</span>';})()}</span></td>
       <td><span class="money ${bClass}">${money(p.moneda,r.balance)}</span></td>
       <td><span class="pd-chip ${pdClass}">${r.estatus}·PD${r.inact||0}</span></td>
       <td>${solicitadoBadge(r)}</td>
@@ -2653,7 +2661,7 @@ function viewGen(){
 
   <div class="tbl-wrap glass">
     <table>
-      <thead><tr><th style="width:42px"></th><th>País</th><th>Representante</th><th>Balance</th><th>Mora</th><th>Solicitado</th><th>Carta sugerida</th><th>Validación</th><th></th></tr></thead>
+      <thead><tr><th style="width:42px"></th><th>País</th><th>Representante</th><th>Gestor</th><th>Balance</th><th>Mora</th><th>Solicitado</th><th>Carta sugerida</th><th>Validación</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
   </div>
@@ -2915,22 +2923,35 @@ async function generarLote(){
   document.getElementById('overlay').classList.add('show');
   const ring=document.getElementById('ring');
   let emitidas=0, errores=0; const fallidas=[];
-  for(let i=0;i<seleccion.length;i++){
-    const rep=seleccion[i];
-    const tGen=tipoEfectivo(rep)||'cobro';
-    const duenio=gestorDeCuenta(rep); // el gestor que recopiló esta cuenta
-    const res=await dbEmitirCarta(rep,tGen,duenio,STATE.role.user);
-    if(res.db){
-      emitidas++;
-      CARTAS.unshift({num:res.num,cod:rep.cod,pais:rep.pais,tipo:tGen,gestor:duenio,
-        fecha:fechaHoyLocal(),autorizo:'—',entrega:'emitida',canal:null,evid:false,estado:'pendiente',
-        emitidaPor:STATE.role.user,
-        snapshot:{rep:Object.assign({},rep,{prev:[]}),gestor:duenio,emitidaPor:STATE.role.user}});
-    } else { errores++; fallidas.push({cod:rep.cod,pais:rep.pais,nombre:rep.nombre,err:res.err||'sin detalle'}); }
-    const pct=Math.round(((i+1)/n)*100);
+  // Emisión en TANDAS PARALELAS: antes se emitía una carta a la vez y cada una
+  // esperaba 2 viajes a la nube (correlativo + guardar). Con 508 cartas eran
+  // ~1000 esperas en fila. Ahora van 8 al mismo tiempo.
+  const TANDA=8; let hechas=0; const _t0=Date.now();
+  for(let i=0;i<seleccion.length;i+=TANDA){
+    const grupo=seleccion.slice(i,i+TANDA);
+    const resultados=await Promise.all(grupo.map(async rep=>{
+      const tGen=tipoEfectivo(rep)||'cobro';
+      const duenio=gestorDeCuenta(rep);
+      const res=await dbEmitirCarta(rep,tGen,duenio,STATE.role.user);
+      return {rep,tGen,duenio,res};
+    }));
+    resultados.forEach(({rep,tGen,duenio,res})=>{
+      if(res.db){
+        emitidas++;
+        CARTAS.unshift({num:res.num,cod:rep.cod,pais:rep.pais,tipo:tGen,gestor:duenio,
+          fecha:fechaHoyLocal(),autorizo:'—',entrega:'emitida',canal:null,evid:false,estado:'pendiente',
+          emitidaPor:STATE.role.user,
+          snapshot:{rep:Object.assign({},rep,{prev:[]}),gestor:duenio,emitidaPor:STATE.role.user}});
+      } else { errores++; fallidas.push({cod:rep.cod,pais:rep.pais,nombre:rep.nombre,err:res.err||'sin detalle'}); }
+      hechas++;
+    });
+    const pct=Math.round((hechas/n)*100);
     const pc=document.getElementById('pct'),ms=document.getElementById('genmsg');
     if(pc)pc.textContent=pct+'%';
-    if(ms)ms.textContent=`Carta ${i+1} de ${n} · ${res.num}${res.db?'':' (no guardada)'}`;
+    if(ms){
+      const seg=(Date.now()-_t0)/1000, falta=Math.round((seg/hechas)*(n-hechas));
+      ms.textContent=`Carta ${hechas} de ${n}`+(falta>2?` · ~${falta>90?Math.ceil(falta/60)+' min':falta+' s'} restantes`:'');
+    }
     if(ring)ring.style.strokeDashoffset=239-(239*pct/100);
   }
   closeModal(); STATE.sel.clear();
