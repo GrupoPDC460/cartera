@@ -3312,30 +3312,69 @@ function nombreArchivoCarta(rep,tipo,num){
 /* Calidad del PDF · escala 1.5 mantiene el texto nítido y es ~45% más rápido
    que escala 2 (menos píxeles que dibujar y que comprimir). */
 const PDF_ESCALA=1.5, PDF_CALIDAD=0.82;
+/* CSS mínimo de la carta · html2canvas solo procesa estas reglas en vez de las
+   ~419 del sistema (con gradientes, blur y sombras que la carta no usa). */
+const CARTA_CSS=`.letter-frame{flex:1;background:#fff;border-radius:12px;padding:52px 58px;color:#1a1a1a;font-family:Arial,sans-serif;
+  box-shadow:0 20px 60px rgba(0,0,0,.5);min-height:1035px;font-size:13.5px;line-height:1.8;overflow:hidden;display:flex;flex-direction:column}
+.letter-frame .lf-head{display:flex;justify-content:flex-end}
+.letter-frame .lf-logo{width:46px;height:46px;border-radius:8px;background:#DA1884;display:grid;place-items:center;color:#fff;font-weight:700;font-family:'Space Grotesk';font-size:13px}
+.letter-frame .lf-rule{border-bottom:2px solid #DA1884;margin:10px 0 22px}
+.letter-frame .lf-title{text-align:center;font-weight:700;font-size:16px;letter-spacing:.5px;margin:6px 0 26px}
+.letter-frame .lf-date{text-align:right;margin-bottom:24px;color:#333}
+.letter-frame p{margin-bottom:16px;text-align:justify}
+.letter-frame .nm{font-weight:700}
+.letter-frame .lf-sign{margin-top:auto;padding-top:40px}
+.letter-frame .lf-sline{width:220px;border-top:1px solid #000;margin:52px 0 6px}
+.letter-frame .lf-foot{margin-top:26px;font-size:9.5px;color:#777;text-align:right;border-top:1px solid #eee;padding-top:9px}
+.letter-frame .hl{background:#fdeaf4;color:#b5128a;padding:0 3px;border-radius:3px;font-weight:600}`;
+let _ifrPdf=null;
+function _prepararIframe(){
+  if(_ifrPdf&&_ifrPdf.contentDocument&&_ifrPdf.contentDocument.body) return _ifrPdf;
+  _ifrPdf=document.createElement('iframe');
+  _ifrPdf.style.cssText='position:fixed;left:-9999px;top:0;width:900px;height:1200px;border:0';
+  document.body.appendChild(_ifrPdf);
+  const d=_ifrPdf.contentDocument;
+  d.open();
+  d.write('<!DOCTYPE html><html><head><meta charset="utf-8"><style>'
+    +'*{margin:0;padding:0;box-sizing:border-box}body{background:#fff;font-family:Arial,sans-serif}'
+    +CARTA_CSS+'</style></head><body></body></html>');
+  d.close();
+  return _ifrPdf;
+}
 let _hostPdf=null;
 async function renderCartaAPdf(rep,tipo,num){
   const html=letterHTML(rep,tipo,num,fechaDeCarta(num));
-  // se reutiliza el mismo contenedor en vez de crearlo y destruirlo en cada carta
-  if(!_hostPdf){
-    _hostPdf=document.createElement('div');
-    _hostPdf.style.cssText='position:fixed;left:-9999px;top:0;width:850px;background:#fff';
-    document.body.appendChild(_hostPdf);
+  let el=null, doc=null;
+  try{
+    const ifr=_prepararIframe();
+    doc=ifr.contentDocument;
+    doc.body.innerHTML=html;
+    el=doc.querySelector('.letter-frame');
+  }catch(e){ el=null; }
+  if(!el){
+    // respaldo: método anterior si el iframe no está disponible
+    if(!_hostPdf){
+      _hostPdf=document.createElement('div');
+      _hostPdf.style.cssText='position:fixed;left:-9999px;top:0;width:850px;background:#fff';
+      document.body.appendChild(_hostPdf);
+    }
+    _hostPdf.innerHTML=html;
+    el=_hostPdf.querySelector('.letter-frame');
+    doc=document;
   }
-  const host=_hostPdf;
-  host.innerHTML=html;
-  const el=host.querySelector('.letter-frame');
   el.style.width='800px'; el.style.boxShadow='none'; el.style.borderRadius='0';
-  await new Promise(r=>{const imgs=host.querySelectorAll('img');let n=imgs.length;if(!n)return r();
+  await new Promise(r=>{const imgs=el.querySelectorAll('img');let n=imgs.length;if(!n)return r();
     imgs.forEach(im=>{if(im.complete)n--;else im.onload=im.onerror=()=>{n--;if(n<=0)r();};});if(n<=0)r();});
   const canvas=await html2canvas(el,{scale:PDF_ESCALA,backgroundColor:'#ffffff',useCORS:true,
-    logging:false,imageTimeout:0,removeContainer:true});
+    logging:false,imageTimeout:0,removeContainer:true,
+    windowWidth:900,windowHeight:1200});
   const {jsPDF}=window.jspdf;
   const pdf=new jsPDF({unit:'pt',format:'letter',compress:true});
   const pw=pdf.internal.pageSize.getWidth(), ph=pdf.internal.pageSize.getHeight();
   let imgW=pw, imgH=canvas.height*(imgW/canvas.width);
   let offsetX=0, offsetY=0;
   if(imgH>ph){ const f=ph/imgH; imgW=imgW*f; imgH=ph; offsetX=(pw-imgW)/2; }
-  else { offsetY=(ph-imgH)/2*0.35; } // pequeño respiro superior si la carta queda corta
+  else { offsetY=(ph-imgH)/2*0.35; }
   pdf.addImage(canvas.toDataURL('image/jpeg',PDF_CALIDAD),'JPEG',offsetX,offsetY,imgW,imgH,undefined,'FAST');
   return pdf;
 }
