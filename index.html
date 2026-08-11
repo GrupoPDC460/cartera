@@ -1732,7 +1732,7 @@ function estadoGestor(nombre){
   let aut=0, rech=0, bloq=0, pend=0;
   cuentas.forEach(k=>{
     const [cod,pais]=k.split('|');
-    const suyas=(CARTAS||[]).filter(c=>normCodigo(c.cod)===cod);
+    const suyas=(CARTAS||[]).filter(c=>normCodigo(c.cod)===cod&&(!c.pais||!pais||c.pais===pais));
     if(suyas.some(c=>c.estado==='aprobada')){ aut++; return; }
     if(suyas.some(c=>c.estado==='pendiente')){ pend++; return; }   // esperando firma
     if(suyas.some(c=>c.estado==='rechazada')){ rech++; return; }
@@ -2514,11 +2514,11 @@ async function dbBorrarRep(cod){
   try{ const {error}=await sb.from('cartera_representantes').delete().eq('codigo',cod); return !error; }catch(e){ return false; }
 }
 async function eliminarCuenta(cod){
-  const r=REPS.find(x=>x.cod===cod); if(!r) return;
+  const r=pais?REPS.find(x=>x.cod===cod&&x.pais===pais):REPS.find(x=>x.cod===cod); if(!r) return;
   if(!confirm(`Quitar a ${r.nombre} (${cod}) de esta carga?\n\nNo se le generará carta. No afecta las cartas ya emitidas.`)) return;
   const ok=await dbBorrarRep(cod);
   const i=REPS.findIndex(x=>x.cod===cod); if(i>=0) REPS.splice(i,1);
-  STATE.sel.delete(cod); buildNav();
+  STATE.sel.delete(claveCuenta(cod,r.pais)); STATE.sel.delete(cod); buildNav();
   toast(ok?'ok':'info', ok?`${r.nombre.split(' ')[0]} quitada de la carga`:'Quitada en pantalla; revisa la conexión');
   viewGen();
 }
@@ -2590,9 +2590,9 @@ function viewGen(){
     const pdClass=r.inact>=7?'pd-7':(r.estatus==='A'?'pd-A':'pd-C');
     const bClass=r.balance>0?'pos':(r.balance===0?'zero':'neg');
     const canSel=v.ok;
-    const checked=STATE.sel.has(r.cod);
+    const checked=STATE.sel.has(claveCuenta(r.cod,r.pais));
     return `<tr class="${v.ok?'':'blocked'}">
-      <td><div class="chk ${checked?'on':''} ${canSel?'':'dis'}" onclick="${canSel?`toggleSel('${r.cod}')`:''}">${svg(ICO.check,11)}</div></td>
+      <td><div class="chk ${checked?'on':''} ${canSel?'':'dis'}" onclick="${canSel?`toggleSel('${r.cod}','${r.pais}')`:''}">${svg(ICO.check,11)}</div></td>
       <td><div class="flag"><span class="fc">${r.pais}</span>${p.nombre}</div></td>
       <td><div class="rep-nm">${r.nombre}</div><div class="rep-cod">${r.cod} · Zona ${r.zona}${r.sector&&r.sector!=='—'?` · Sector ${r.sector}`:''}</div></td>
       <td><span style="font-size:12px;color:var(--txt-2)">${(()=>{const g=gestorDeCuenta(r);return g&&g!=='—'?g.split(' ').slice(0,2).join(' '):'<span style="color:var(--txt-3)">sin gestor</span>';})()}</span></td>
@@ -2701,7 +2701,7 @@ function viewGen(){
   </div>`;
 }
 function setTipo(t){STATE.tipo=t;STATE.sel.clear();viewGen();}
-function toggleSel(cod){STATE.sel.has(cod)?STATE.sel.delete(cod):STATE.sel.add(cod);viewGen();}
+function toggleSel(cod,pais){const k=claveCuenta(cod,pais);STATE.sel.has(k)?STATE.sel.delete(k):STATE.sel.add(k);viewGen();}
 function tipoEfectivo(r){
   if(STATE.tipo==='auto') return (r.tipoSolicitado&&TIPOS[r.tipoSolicitado])?r.tipoSolicitado:null;
   return STATE.tipo;
@@ -2712,7 +2712,7 @@ function selectAll(){
   REPS.filter(r=>{
     const te=tipoEfectivo(r);
     return te && !yaGenerada(r,te) && validar(r,te).ok;
-  }).forEach(r=>STATE.sel.add(r.cod));
+  }).forEach(r=>STATE.sel.add(claveCuenta(r.cod,r.pais)));
   viewGen();
 }
 
@@ -2899,11 +2899,14 @@ function closeModal(){document.getElementById('overlay').classList.remove('show'
 
 /* ---------- generación por lotes ---------- */
 async function quitarDuplicados(){
-  const byc={}; REPS.forEach(r=>{ byc[r.cod]=r; });   // la última ocurrencia gana (la más reciente)
+  // Clave CÓDIGO + PAÍS: un mismo código puede existir en dos países (p. ej. 926798
+  // está en Honduras con saldo y en Guatemala en cero). Deduplicar solo por código
+  // borraría la cuenta buena.
+  const byc={}; REPS.forEach(r=>{ byc[claveCuenta(r.cod,r.pais)]=r; });
   const dedup=Object.values(byc);
   const nDup=REPS.length-dedup.length;
   if(nDup<=0){ toast('info','No hay cuentas duplicadas en esta carga'); return; }
-  if(!confirm(`Se encontraron ${nDup} cuenta(s) duplicada(s) (mismo código).\n\nSe dejará UNA sola por código (la más reciente) y se borrarán las copias de la base.\n\nNO afecta las cartas ya emitidas.\n\n¿Continuar?`)) return;
+  if(!confirm(`Se encontraron ${nDup} cuenta(s) duplicada(s) (mismo código Y mismo país).\n\nSe dejará UNA sola y se borrarán las copias.\n\nLas cuentas con el mismo código en PAÍSES DISTINTOS se conservan.\n\nNO afecta las cartas ya emitidas.\n\n¿Continuar?`)) return;
   toast('info','Quitando duplicados…');
   REPS.length=0; dedup.forEach(r=>REPS.push(r));
   const filas=dedup.map(r=>({cod:r.cod,pais:r.pais,zona:r.zona,nombre:r.nombre,estatus:r.estatus,inact:r.inact,inactividadesInfo:r.inactividadesInfo||'',balance:r.balance,cedula:r.cedula,camp:r.campania}));
@@ -2930,7 +2933,10 @@ async function quitarBloqueadas(){
 async function generarLote(){
   // Barrera de seguridad: aunque algo haya colado una cuenta ya generada,
   // aquí se descarta antes de emitir. Nunca se duplica una carta del día.
-  const crudas=[...STATE.sel].map(cod=>REPS.find(r=>r.cod===cod)).filter(Boolean);
+  const crudas=[...STATE.sel].map(k=>{
+    const [c,p]=String(k).split('|');
+    return p?REPS.find(r=>normCodigo(r.cod)===c&&r.pais===p):REPS.find(r=>r.cod===k);
+  }).filter(Boolean);
   const seleccion=crudas.filter(r=>{const te=tipoEfectivo(r); return te && !yaGenerada(r,te);});
   const descartadas=crudas.length-seleccion.length;
   if(descartadas>0) toast('info',`${descartadas} cuenta(s) ya tenían carta y se omitieron`);
@@ -2981,7 +2987,7 @@ async function generarLote(){
   else if(!SB_OK) toast('info',`${n} cartas simuladas (sin conexión · no se guardaron)`);
   if(errores){
     // las que fallaron quedan seleccionadas para reintentar de una vez
-    fallidas.forEach(f=>STATE.sel.add(f.cod));
+    fallidas.forEach(f=>STATE.sel.add(claveCuenta(f.cod,f.pais)));
     const detalle=fallidas.slice(0,6).map(f=>`${f.cod} (${f.pais}): ${f.err}`).join(' · ');
     toast('bad',`${errores} cartas NO se guardaron · quedaron seleccionadas para reintentar`);
     console.warn('Cartas no guardadas:',fallidas);
