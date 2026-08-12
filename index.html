@@ -673,7 +673,7 @@ tbody tr.blocked{opacity:.62}
       <div class="topbar glass">
         <div><h1 id="vTitle">Panel</h1><div class="crumb" id="vCrumb">Resumen general de la operación</div></div>
         <div class="spacer"></div>
-        <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4-4"/></svg><input placeholder="Buscar representante o código…"></div>
+        <div class="search" style="position:relative"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4-4"/></svg><input id="buscador" placeholder="Buscar representante o código…" autocomplete="off" oninput="buscarGlobal(this.value)" onkeydown="if(event.key==='Escape'){this.value='';buscarGlobal('');}"><div id="buscadorRes" style="display:none;position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:60;background:var(--panel,#12161f);border:1px solid var(--stroke);border-radius:12px;box-shadow:0 18px 50px rgba(0,0,0,.55);max-height:min(420px,60vh);overflow-y:auto"></div></div>
         <div class="data-stamp"><span class="dot"></span><span id="stamp">Sin base cargada</span></div>
         <div style="position:relative;display:flex;gap:8px" id="topActions">
           <div class="theme-btn" onclick="toggleThemePop(event)" title="Personalizar colores">
@@ -3170,7 +3170,7 @@ function repDeCarta(cod,num){
   return (c&&c.snapshot&&c.snapshot.rep)||REPS.find(r=>r.cod===cod)||null;
 }
 function fmtFecha(f){if(!f)return '—';const[y,m,d]=String(f).split('-');return `${d}/${m}/${y}`;}
-let HF={desde:'',hasta:'',gestor:'todos',estado:'todos'};
+let HF={desde:'',hasta:'',gestor:'todos',estado:'todos',entrega:'todas'};
 let HIST_LISTA=[];
 function exportarHist(){
   if(typeof XLSX==='undefined'){toast('info','No se pudo cargar el exportador');return;}
@@ -3217,7 +3217,15 @@ function viewRechazadas(){
             <td>${(PAISES[c.pais]&&PAISES[c.pais].nombre)||c.pais||'—'}</td>
             <td>${({cobro:'Cobro',finiquito:'Finiquito',aldia:'Al día',saldo:'Saldo pendiente'})[c.tipo]||c.tipo||'—'}</td>
             <td style="font-size:12px">${c.fecha||'—'}</td>
-            <td style="font-size:12px;color:var(--txt-3)">${c.motivo||'No autorizada por supervisión'}</td>
+            <td style="font-size:12px;color:var(--txt-2)">${(()=>{
+              if(c.motivo&&String(c.motivo).trim()) return c.motivo;
+              // sin motivo escrito: se deduce de los datos de la cuenta
+              const r=rep||{};
+              if(r.balance!=null&&r.balance<=0&&c.tipo==='cobro') return 'La cuenta no tenía saldo pendiente (saldo '+(r.balance||0)+')';
+              if(r.tipoSolicitadoTexto&&r.tipoSolicitado==='no_soportado') return 'Se pidió un tipo de carta que el sistema aún no maneja ('+r.tipoSolicitadoTexto+')';
+              if(!r.cod) return 'La cuenta ya no está en la base del día';
+              return 'No autorizada por supervisión';
+            })()}</td>
           </tr>`;}).join('')}</tbody></table></div>
     </div>`
   : `<div class="panel glass" style="text-align:center;padding:44px 20px">
@@ -3238,6 +3246,12 @@ function viewHist(){
   if(HF.estado==='aprobada') lista=lista.filter(c=>c.estado==='aprobada');
   else if(HF.estado==='pendiente') lista=lista.filter(c=>c.estado==='pendiente');
   else if(HF.estado==='rechazada') lista=lista.filter(c=>c.estado==='rechazada');
+  // Etapa de entrega: en qué punto del recorrido va la carta
+  if(HF.entrega&&HF.entrega!=='todas'){
+    if(HF.entrega==='falta_gerente') lista=lista.filter(c=>c.estado==='aprobada'&&(!c.entrega||c.entrega==='emitida'));
+    else if(HF.entrega==='falta_rep') lista=lista.filter(c=>c.entrega==='enviada_gerente');
+    else lista=lista.filter(c=>c.entrega===HF.entrega);
+  }
   else lista=lista.filter(c=>c.estado!=='rechazada'); // 'todos' = activas (autorizadas + por firmar), sin rechazadas
   // AUTORIZADAS PRIMERO, luego el resto (sin importar el tipo de carta)
   const rank=c=>c.estado==='aprobada'?0:(c.estado==='pendiente'?1:2);
@@ -3261,6 +3275,13 @@ function viewHist(){
     ${svg(ICO.bolt,15)}<div><b>¿Cómo funciona?</b> 1) Generas la carta → queda <b>Por autorizar</b>. 2) Un supervisor la <b>firma</b>. 3) Ya firmada, puedes <b>descargar el PDF</b> y <b>enviarla a la gerente</b>. 4) Cuando llegue a la representante, <b>registras la entrega con evidencia</b>.</div></div>`:''}
   <div class="toolbar">
     <div class="field"><label>Estado</label>
+      <select class="select" style="min-width:190px" onchange="HF.entrega=this.value;viewHist()">
+        <option value="todas" ${(!HF.entrega||HF.entrega==='todas')?'selected':''}>Toda la entrega</option>
+        <option value="falta_gerente" ${HF.entrega==='falta_gerente'?'selected':''}>Falta enviar a gerente (${(function(){let n=0;enRango.forEach(c=>{if(c.estado==='aprobada'&&(!c.entrega||c.entrega==='emitida'))n++;});return n;})()})</option>
+        <option value="enviada_gerente" ${HF.entrega==='enviada_gerente'?'selected':''}>Ya con la gerente (${(function(){let n=0;enRango.forEach(c=>{if(c.entrega==='enviada_gerente')n++;});return n;})()})</option>
+        <option value="entregada" ${HF.entrega==='entregada'?'selected':''}>Entregada a la representante (${(function(){let n=0;enRango.forEach(c=>{if(c.entrega==='entregada')n++;});return n;})()})</option>
+        <option value="respondida" ${HF.entrega==='respondida'?'selected':''}>Con respuesta (${(function(){let n=0;enRango.forEach(c=>{if(c.entrega==='respondida')n++;});return n;})()})</option>
+      </select>
       <select class="select" style="min-width:190px" onchange="HF.estado=this.value;viewHist()">
         <option value="todos" ${HF.estado==='todos'?'selected':''}>Activas · autorizadas + por firmar</option>
         <option value="aprobada" ${HF.estado==='aprobada'?'selected':''}>Solo autorizadas (${aprobadasDisp})</option>
@@ -3306,15 +3327,65 @@ function viewHist(){
     </tr>`;}).join(''):`<tr><td colspan="${isSuper?7:6}" style="text-align:center;padding:36px;color:var(--txt-3)">No hay cartas en este rango${(HF.desde||HF.hasta)?' · prueba quitando el filtro de fecha':''}${HF.estado!=='todos'?' · prueba cambiando el filtro de estado':''}</td></tr>`}</tbody>
   </table></div>`;
 }
+/* ---- Buscador global: cuentas de la base + cartas emitidas ---- */
+function buscarGlobal(q){
+  const cont=_el('buscadorRes'); if(!cont||typeof cont.innerHTML==='undefined') return;
+  const t=String(q||'').trim().toLowerCase();
+  if(t.length<2){ if(cont.style) cont.style.display='none'; cont.innerHTML=''; return; }
+  const norm=x=>String(x==null?'':x).toLowerCase();
+  const isSuper=STATE.role&&STATE.role.id==='super';
+  const mias=c=>isSuper||((c.gestor||'').trim()===((STATE.role&&STATE.role.user)||'').trim());
+  const cuentas=(REPS||[]).filter(r=>norm(r.cod).includes(t)||norm(r.nombre).includes(t)).slice(0,8);
+  const cartas=(CARTAS||[]).filter(c=>mias(c)&&(norm(c.cod).includes(t)||norm(c.num).includes(t)
+      ||norm((repDeCarta(c.cod,c.num)||{}).nombre).includes(t))).slice(0,8);
+  if(!cuentas.length&&!cartas.length){
+    cont.innerHTML='<div style="padding:16px;text-align:center;color:var(--txt-3);font-size:12.5px">Sin resultados para “'+q+'”</div>';
+    if(cont.style) cont.style.display='block'; return;
+  }
+  const filaCuenta=r=>`<div style="padding:10px 13px;border-bottom:1px solid rgba(255,255,255,.05);cursor:pointer" onclick="irACuenta('${r.cod}','${r.pais}')">`
+    +`<div style="font-size:13px;color:var(--txt-1);font-weight:600">${r.nombre||r.cod}</div>`
+    +`<div style="font-size:11px;color:var(--txt-3);margin-top:2px">${r.cod} · ${(PAISES[r.pais]&&PAISES[r.pais].nombre)||r.pais}${r.zona&&r.zona!=='—'?' · Zona '+r.zona:''} · ${r.estatus}·PD${r.inact||0}</div></div>`;
+  const filaCarta=c=>{const rp=repDeCarta(c.cod,c.num)||{};
+    return `<div style="padding:10px 13px;border-bottom:1px solid rgba(255,255,255,.05);cursor:pointer" onclick="irACarta('${c.num}')">`
+    +`<div style="font-size:13px;color:var(--txt-1);font-weight:600">${rp.nombre||c.cod}</div>`
+    +`<div style="font-size:11px;color:var(--txt-3);margin-top:2px"><span style="font-family:var(--mono)">${c.num}</span> · ${c.fecha||''} · ${c.estado==='aprobada'?'Autorizada':(c.estado==='rechazada'?'Rechazada':'Pendiente')}</div></div>`;};
+  cont.innerHTML=(cuentas.length?`<div style="padding:7px 13px;font-size:10.5px;letter-spacing:.5px;color:var(--txt-3);background:rgba(255,255,255,.03)">CUENTAS (${cuentas.length})</div>`+cuentas.map(filaCuenta).join(''):'')
+    +(cartas.length?`<div style="padding:7px 13px;font-size:10.5px;letter-spacing:.5px;color:var(--txt-3);background:rgba(255,255,255,.03)">CARTAS (${cartas.length})</div>`+cartas.map(filaCarta).join(''):'');
+  if(cont.style) cont.style.display='block';
+}
+function cerrarBuscador(){ const c=_el('buscadorRes'); if(c&&c.style) c.style.display='none'; const i=_el('buscador'); if(i&&'value' in i) i.value=''; }
+function irACuenta(cod,pais){ cerrarBuscador(); HF.q=cod; go(STATE.role.id==='super'?'gen':'hist'); 
+  setTimeout(()=>{ const f=_el('histBusca'); if(f&&'value' in f){ f.value=cod; } },60); }
+function irACarta(num){ cerrarBuscador(); const c=(CARTAS||[]).find(x=>String(x.num)===String(num));
+  if(c&&c.estado==='rechazada'&&STATE.role.id!=='super'){ go('rechazadas'); return; }
+  go('hist'); setTimeout(()=>{ if(c) showLetter(c.cod,c.tipo,c.num); },80); }
+document.addEventListener('click',e=>{ const s=_el('buscadorRes'), i=_el('buscador');
+  if(s&&s.style&&s.style.display==='block'&&e.target!==i&&s.contains&&!s.contains(e.target)) s.style.display='none'; });
 async function verEvidencia(num){
   const c=CARTAS.find(x=>String(x.num)===String(num));
   if(!c||!c.evidPath){toast('info','Aún no hay archivo de evidencia adjunto');return;}
   if(!SB_OK||!sb){toast('info','La evidencia no está disponible sin conexión');return;}
   toast('info','Cargando evidencia…');
   try{
-    const {data,error}=await sb.storage.from('cartera_evidencias').download(c.evidPath);
-    if(error||!data) throw error||new Error('sin datos');
-    const url=URL.createObjectURL(data);
+    // 1) descarga directa · 2) si el bucket es privado, URL firmada · 3) URL pública
+    let url=null, ultimoError=null;
+    try{
+      const {data,error}=await sb.storage.from('cartera_evidencias').download(c.evidPath);
+      if(error) ultimoError=error; else if(data) url=URL.createObjectURL(data);
+    }catch(e){ ultimoError=e; }
+    if(!url){
+      try{
+        const {data:fir,error:eFir}=await sb.storage.from('cartera_evidencias').createSignedUrl(c.evidPath,3600);
+        if(!eFir&&fir&&fir.signedUrl) url=fir.signedUrl; else if(eFir) ultimoError=eFir;
+      }catch(e){ ultimoError=e; }
+    }
+    if(!url){
+      try{
+        const {data:pub}=sb.storage.from('cartera_evidencias').getPublicUrl(c.evidPath);
+        if(pub&&pub.publicUrl) url=pub.publicUrl;
+      }catch(e){}
+    }
+    if(!url) throw ultimoError||new Error('no se pudo obtener el archivo');
     const esImg=/\.(png|jpe?g|webp|gif)$/i.test(c.evidPath);
     const soyDueno=STATE.role&&(STATE.role.id==='super'||(c.gestor||'').trim()===(STATE.role.user||'').trim());
     document.getElementById('modal').innerHTML=`
