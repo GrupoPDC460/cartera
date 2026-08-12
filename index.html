@@ -2241,6 +2241,31 @@ function downloadConsolidado(n){
 /* ============ CARGA REAL DE LA BASE DEL QUERY ============ */
 const PAIS_A_ISO={GUATEMALA:'GT','EL SALVADOR':'SV',HONDURAS:'HD',NICARAGUA:'NC',PANAMA:'PA','PANAMÁ':'PA','REPUBLICA DOMINICANA':'RD','REPÚBLICA DOMINICANA':'RD','DOMINICANA':'RD','RD':'RD'};
 /* alias: incluye los ISO REALES (HN, NI, DO) que no coinciden con los internos (HD, NC, RD) */
+/* Estructura de carpetas del ZIP · el gestor la elige y queda guardada */
+const NIVELES_ZIP={
+  pais:   {etiqueta:'País',          valor:r=>((PAISES[r.pais]&&PAISES[r.pais].nombre)||r.pais||''), prefijo:'',        vacio:'Sin_pais'},
+  zona:   {etiqueta:'Zona',          valor:r=>r.zona,   prefijo:'Zona_',   vacio:'Sin_zona'},
+  sector: {etiqueta:'Sector',        valor:r=>r.sector, prefijo:'Sector_', vacio:'Sin_sector'},
+  pd:     {etiqueta:'Tramo de mora', valor:r=>((r.estatus==='M'||r.estatus==='R')?'Reserva':('PD'+(r.inact||0))), prefijo:'', vacio:'Sin_PD'},
+  tipo:   {etiqueta:'Tipo de carta', valor:(r,c)=>(({cobro:'Cobro',finiquito:'Finiquito',aldia:'Cuenta_al_dia',saldo:'Saldo_pendiente'})[c&&c.tipo]||(c&&c.tipo)||''), prefijo:'', vacio:'Sin_tipo'},
+  gestor: {etiqueta:'Gestor',        valor:(r,c)=>(c&&c.gestor)||'', prefijo:'', vacio:'Sin_gestor'},
+  fecha:  {etiqueta:'Fecha',         valor:(r,c)=>(c&&c.fecha)||'',  prefijo:'', vacio:'Sin_fecha'}
+};
+const ZIP_ORDEN_DEF=['pais','zona','sector','pd'];
+function zipOrden(){
+  try{ const g=JSON.parse(localStorage.getItem('cartera_zip_orden')); if(Array.isArray(g)&&g.length) return g.filter(k=>NIVELES_ZIP[k]); }catch(e){}
+  return ZIP_ORDEN_DEF.slice();
+}
+function setZipOrden(arr){ try{ localStorage.setItem('cartera_zip_orden',JSON.stringify(arr)); }catch(e){} }
+function limpioCarpeta(t){ return String(t==null?'':t).normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Za-z0-9 _-]/g,'').trim().replace(/\s+/g,'_'); }
+function rutaZip(rep,carta){
+  const partes=zipOrden().map(k=>{
+    const n=NIVELES_ZIP[k]; if(!n) return null;
+    const v=limpioCarpeta(n.valor(rep,carta));
+    return (v&&v!=='')? (n.prefijo+v) : n.vacio;
+  }).filter(Boolean);
+  return partes.length?partes.join('/')+'/':'';
+}
 /* Gestoras que hoy solo manejan República Dominicana · el query SQL aún no cubre RD */
 const GESTORES_RD=['Jasmin Virginia Ramirez Colay','Angie Dyana Buch Diaz'];
 const PAIS_ALIAS={GT:'GT',GTM:'GT',GUA:'GT',GUATE:'GT',GUATEMALA:'GT',
@@ -3254,6 +3279,7 @@ function viewHist(){
       </div></div>
     <div style="flex:1"></div>
     <div class="field"><label>&nbsp;</label><button class="btn primary" ${aprobadasDisp?'':'disabled'} onclick="descargarZip()">${svg(ICO.down)} Descargar aprobadas (ZIP)${aprobadasDisp?` · ${aprobadasDisp}`:''}</button></div>
+    <div class="field"><label>&nbsp;</label><button class="btn ghost" onclick="abrirOrdenZip()" title="Elige cómo se agrupan las carpetas dentro del ZIP">${svg(ICO.hist)} Organizar carpetas</button></div>
     <div class="field"><label>&nbsp;</label><button class="btn ghost" onclick="exportarHist()">${svg(ICO.down)} Excel</button></div>
   </div>
   <div class="tbl-wrap glass"><table>
@@ -3520,6 +3546,43 @@ async function descargarPDFUnico(cod,tipo,num){
     toast('ok','PDF descargado · '+numC);
   }catch(e){toast('info','No se pudo generar el PDF: '+(e&&e.message?e.message:'error'));}
 }
+/* ---- Elegir cómo se agrupan las carpetas del ZIP ---- */
+function abrirOrdenZip(){
+  const actual=zipOrden();
+  const fila=(k,i)=>{
+    const n=NIVELES_ZIP[k];
+    return `<div style="display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:9px;background:rgba(255,255,255,.03);border:1px solid var(--stroke);margin-bottom:7px">`
+      +`<span style="font-family:var(--mono);font-size:11px;color:var(--teal);min-width:16px">${i+1}</span>`
+      +`<span style="flex:1;font-size:13px;color:var(--txt-1)">${n.etiqueta}</span>`
+      +`<button class="btn ghost sm" style="padding:3px 9px" onclick="moverNivelZip(${i},-1)" ${i===0?'disabled':''}>↑</button>`
+      +`<button class="btn ghost sm" style="padding:3px 9px" onclick="moverNivelZip(${i},1)" ${i===actual.length-1?'disabled':''}>↓</button>`
+      +`<button class="btn no sm" style="padding:3px 9px" onclick="quitarNivelZip('${k}')">Quitar</button></div>`;
+  };
+  const disponibles=Object.keys(NIVELES_ZIP).filter(k=>!actual.includes(k));
+  const ejemplo=actual.map(k=>{const n=NIVELES_ZIP[k];
+    const demo={pais:'Panama',zona:'Zona_617',sector:'Sector_7',pd:'PD7',tipo:'Cobro',gestor:'Heidi_Morales',fecha:'2026-08-11'};
+    return demo[k]||n.etiqueta;}).join('/');
+  const html=`<div style="max-width:520px">
+    <h3 style="margin-bottom:4px">Organizar carpetas del ZIP</h3>
+    <p style="font-size:12.5px;color:var(--txt-3);margin-bottom:14px">Elige en qué orden se agrupan las cartas. Se guarda para tus próximas descargas.</p>
+    <div>${actual.map(fila).join('')}</div>
+    ${disponibles.length?`<div style="margin-top:12px"><div style="font-size:12px;color:var(--txt-3);margin-bottom:6px">Agregar nivel:</div>
+      <div style="display:flex;flex-wrap:wrap;gap:7px">${disponibles.map(k=>`<button class="btn ghost sm" onclick="agregarNivelZip('${k}')">+ ${NIVELES_ZIP[k].etiqueta}</button>`).join('')}</div></div>`:''}
+    <div style="margin-top:14px;padding:11px 13px;border-radius:9px;background:rgba(45,212,191,.08);border:1px solid rgba(45,212,191,.25)">
+      <div style="font-size:11px;color:var(--txt-3)">Así quedarán las carpetas:</div>
+      <div style="font-family:var(--mono);font-size:11.5px;color:var(--teal);margin-top:4px;word-break:break-all">${ejemplo||'(sin carpetas · todo suelto)'}/carta.pdf</div></div>
+    <div style="display:flex;gap:9px;margin-top:16px">
+      <button class="btn ghost" style="flex:1" onclick="restaurarOrdenZip()">Volver al orden normal</button>
+      <button class="btn primary" style="flex:1" onclick="closeModal()">Listo</button></div>
+  </div>`;
+  document.getElementById('modal').innerHTML=html;
+  document.getElementById('overlay').classList.add('show');
+}
+function moverNivelZip(i,d){ const a=zipOrden(); const j=i+d; if(j<0||j>=a.length) return;
+  const t=a[i]; a[i]=a[j]; a[j]=t; setZipOrden(a); abrirOrdenZip(); }
+function quitarNivelZip(k){ const a=zipOrden().filter(x=>x!==k); setZipOrden(a); abrirOrdenZip(); }
+function agregarNivelZip(k){ const a=zipOrden(); if(!a.includes(k)) a.push(k); setZipOrden(a); abrirOrdenZip(); }
+function restaurarOrdenZip(){ setZipOrden(ZIP_ORDEN_DEF.slice()); abrirOrdenZip(); }
 async function descargarZip(){
   const isSuper=STATE.role.id==='super';
   const mias=isSuper?CARTAS:CARTAS.filter(c=>(c.gestor||'').trim()===(STATE.role.user||'').trim());
@@ -3557,13 +3620,7 @@ async function descargarZip(){
       try{
         const pdf=await renderCartaAPdf(rep,c.tipo,c.num);
         // Organiza el ZIP en carpetas: País / Zona NNN / Sector N / archivo.pdf
-        const limpioCarpeta=t=>String(t||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Za-z0-9 ]/g,'').trim().replace(/\s+/g,'_');
-        const carpetaPais=limpioCarpeta((PAISES[rep.pais]&&PAISES[rep.pais].nombre)||rep.pais)||'Sin_pais';
-        const z=limpioCarpeta(rep.zona);
-        const carpetaZona=(z&&z!=='')?`Zona_${z}`:'Sin_zona';
-        const sc=limpioCarpeta(rep.sector);
-        const carpetaSector=(sc&&sc!==''&&sc!=='—')?`Sector_${sc}`:'Sin_sector';
-        zip.file(`${carpetaPais}/${carpetaZona}/${carpetaSector}/${nombreArchivoCarta(rep,c.tipo,c.num)}`,pdf.output('arraybuffer'));
+        zip.file(rutaZip(rep,c)+nombreArchivoCarta(rep,c.tipo,c.num),pdf.output('arraybuffer'));
         generadas++;
       }catch(e){}
     }
