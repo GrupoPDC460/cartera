@@ -1819,6 +1819,10 @@ function viewUpload(){
       <button class="btn ghost" onclick="fusionarDesdeCache()">${svg(ICO.bolt)} 3 · Fusionar con el de hoy</button>
     </div>
     <div id="semaforoLote" style="margin-top:14px"></div>
+    ${STATE.role.id==='super'?`<div style="margin-top:12px;display:flex;gap:9px;align-items:center;flex-wrap:wrap">
+      <button class="btn ghost sm" onclick="abrirAsignacion()">${svg(ICO.users?ICO.users:ICO.check,14)} Repartir cuentas entre gestores</button>
+      <span style="font-size:11.5px;color:var(--txt-3)">Solo si necesitas asignar tú mismo las cuentas de esta carga</span>
+    </div>`:''}
     <p style="font-size:11px;color:var(--txt-3);margin-top:11px;line-height:1.5">Columnas de la base: CODIGO REP · ESTATUS ACTUAL · N. INACTIVIDADES · PAIS · ZONA · SECTOR · NOMBRE_CONSEJERA · FECHA_NOMBRAMIENTO · BALANCE · CEDULA · CAMPANIA_ULTIMA_ORDEN · ID</p>
     <div id="baseDropTitle" style="font-size:12px;color:var(--txt-3);margin-top:10px">Sube la base del query SQL (.xlsx o .csv)</div>
     <div id="baseProgreso" style="display:none;margin-top:14px"></div>
@@ -1834,7 +1838,7 @@ function viewUpload(){
   </div>
   <div id="asigPanel"></div>`;
     renderSemaforo();
-    dbCargarAsignaciones().then(()=>{ if(REPS.length) viewAsignar(); });
+    dbCargarAsignaciones().then(()=>{ if(REPS.length&&STATE.asignarAbierto) viewAsignar(); });
   });
 }
 /* --- semáforo del lote: luz verde solo cuando base + consolidado están listos --- */
@@ -1942,6 +1946,13 @@ function cuentasFiltradas(){
     return true;
   });
 }
+/* El panel de reparto solo aparece si el supervisor lo pide expresamente */
+function abrirAsignacion(){
+  if(!REPS.length){ toast('info','Primero sube la base del día'); return; }
+  STATE.asignarAbierto=true; STATE.sel.clear(); viewAsignar();
+  setTimeout(()=>{ const el=_el('asigPanel'); if(el&&el.scrollIntoView) el.scrollIntoView({behavior:'smooth',block:'start'}); },80);
+}
+function cerrarAsignacion(){ STATE.asignarAbierto=false; STATE.sel.clear(); viewUpload(); }
 function viewAsignar(){
   const lista=cuentasFiltradas();
   const paisesOpt=['todos',...Object.keys(PAISES)].map(p=>
@@ -1965,7 +1976,7 @@ function viewAsignar(){
     <div class="panel glass" style="margin-top:16px">
       <div class="panel-h"><div><h3>Asignar cartas a gestores</h3>
         <div style="font-size:12px;color:var(--txt-3);margin-top:3px">Marca cuentas y asígnalas · la asignación manual manda sobre la recopilación</div></div>
-        <span class="pill ${sinG?'warn':'ok'}">${sinG} sin asignar</span></div>
+        <div style="display:flex;gap:8px;align-items:center"><span class="pill ${sinG?'warn':'ok'}">${sinG} sin asignar</span><button class="btn ghost sm" onclick="cerrarAsignacion()">Cerrar</button></div></div>
       <div style="display:flex;gap:9px;flex-wrap:wrap;margin-bottom:12px">
         <select class="select" style="max-width:180px" onchange="ASIG_FILTRO.pais=this.value;viewAsignar()">${paisesOpt}</select>
         <select class="select" style="max-width:170px" onchange="ASIG_FILTRO.estado=this.value;viewAsignar()">
