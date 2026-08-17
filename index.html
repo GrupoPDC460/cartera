@@ -1139,6 +1139,7 @@ function buildNav(){
     {id:'firma',ic:ICO.sign,t:'Mi firma'},
     {id:'tasas',ic:ICO.bolt,t:'Tasa de conversión'},
     ...(STATE.role.delegado?[]:[{id:'users',ic:ICO.user,t:'Personas'}]),
+    ...(STATE.role.delegado?[]:[{id:'mant',ic:ICO.block,t:'Mantenimiento'}]),
     {id:'ayuda',ic:ICO.bolt,t:'Instrucciones'},
   ] : [
     {id:'perfil',ic:ICO.dash,t:'Mi panel'},
@@ -1164,6 +1165,7 @@ const TITLES={dash:['Panel','Resumen general de la operación'],
   tasas:['Tasa de conversión','Unifica la cartera de los 6 países en dólares'],
   recop:['Recopilación','Plantilla de carga y cortes del día'],
   rechazadas:['Cartas rechazadas','No fueron autorizadas · revisa el motivo y vuelve a solicitarlas'],
+  mant:['Mantenimiento','Operaciones que borran información · usar solo si sabes lo que haces'],
   perfil:['Mi perfil','Tu actividad y tus cartas'],
   plantillas:['Plantillas de cartas','Edita el texto · los campos del Excel no cambian'],
   ayuda:['Instrucciones de uso','Cómo usar el sistema y cómo solicitar las cartas']};
@@ -1174,7 +1176,7 @@ function go(v){
   document.getElementById('vTitle').textContent=TITLES[v][0];
   document.getElementById('vCrumb').textContent=TITLES[v][1];
   const el=document.getElementById('view'); el.classList.remove('fade');void el.offsetWidth;el.classList.add('fade');
-  ({dash:viewDash,upload:viewUpload,gen:viewGen,bloqueo:viewBloqueadas,auth:viewAuth,hist:viewHist,users:viewUsers,firma:viewFirma,tasas:viewTasas,recop:viewRecop,perfil:viewPerfil,plantillas:viewPlantillas,rechazadas:viewRechazadas,ayuda:viewAyuda}[v])();
+  ({dash:viewDash,upload:viewUpload,gen:viewGen,bloqueo:viewBloqueadas,auth:viewAuth,hist:viewHist,users:viewUsers,firma:viewFirma,tasas:viewTasas,recop:viewRecop,perfil:viewPerfil,plantillas:viewPlantillas,rechazadas:viewRechazadas,mant:viewMantenimiento,ayuda:viewAyuda}[v])();
 }
 
 /* ============ INSTRUCCIONES DE USO ============ */
@@ -1830,12 +1832,6 @@ function viewUpload(){
     <div id="pdSummary"></div>
   </div>
 
-  <div class="panel glass" style="margin-top:14px;border-color:rgba(251,113,133,.25)">
-    <div class="panel-h"><div><h3 style="color:var(--bad)">Zona de mantenimiento</h3>
-      <div style="font-size:12px;color:var(--txt-3);margin-top:3px">Borra cartas, base, recopilaciones y reinicia la numeración · irreversible</div></div>
-      <button class="btn ghost sm" style="flex:0;margin-right:8px" onclick="limpiarGeneracion()">${svg(ICO.upload,14)} Limpiar carga actual (re-fusionar)</button>
-      <button class="btn no sm" style="flex:0" onclick="resetSistema()">${svg(ICO.block,14)} Reiniciar datos (empezar de 0)</button></div>
-  </div>
   <div id="asigPanel"></div>`;
     renderSemaforo();
     dbCargarAsignaciones().then(()=>{ if(REPS.length&&STATE.asignarAbierto) viewAsignar(); });
@@ -3210,6 +3206,42 @@ function exportarHist(){
   toast('ok',`Excel exportado · ${rows.length} cartas`);
 }
 /* Cartas que no fueron autorizadas · vista aparte para que no estorben en "Mis cartas" */
+/* Seccion aparte para que nadie borre por accidente desde la pantalla de carga */
+function viewMantenimiento(){
+  if(STATE.role.id!=='super'){ document.getElementById('view').innerHTML='<div class="panel glass" style="text-align:center;padding:40px">Esta sección es solo para supervisión.</div>'; return; }
+  const nCartas=(CARTAS||[]).length, nCuentas=(REPS||[]).length;
+  document.getElementById('view').innerHTML=`
+    <div class="panel glass" style="margin-bottom:14px;border-color:rgba(251,191,36,.3)">
+      <div style="padding:4px 2px">
+        <div style="font-weight:800;font-size:14px;color:var(--warn)">Antes de continuar</div>
+        <div style="font-size:12.5px;color:var(--txt-2);margin-top:6px;line-height:1.6">
+          Ahora mismo hay <b>${nCartas}</b> cartas emitidas y <b>${nCuentas}</b> cuentas en la base.<br>
+          Estas operaciones <b>no se pueden deshacer</b>. Si solo quieres corregir la carga del día, usa <b>Limpiar carga actual</b>.
+        </div></div></div>
+
+    <div class="panel glass" style="margin-bottom:14px">
+      <div class="panel-h"><div><h3>Limpiar carga actual</h3>
+        <div style="font-size:12px;color:var(--txt-3);margin-top:3px">Borra la base y las recopilaciones del día para volver a subirlas</div></div></div>
+      <div style="font-size:12.5px;color:var(--txt-2);line-height:1.6;margin-bottom:12px">
+        <b style="color:var(--ok)">Sí conserva:</b> las cartas ya emitidas y la numeración de correlativos.<br>
+        <b style="color:var(--warn)">Borra:</b> la base de cuentas y lo que subieron los gestores hoy.</div>
+      <button class="btn ghost" onclick="limpiarGeneracion()">${svg(ICO.upload,14)} Limpiar carga actual</button>
+    </div>
+
+    <div class="panel glass" style="border-color:rgba(251,113,133,.35)">
+      <div class="panel-h"><div><h3 style="color:var(--bad)">Reiniciar todo el sistema</h3>
+        <div style="font-size:12px;color:var(--txt-3);margin-top:3px">Deja el sistema como recién instalado</div></div></div>
+      <div style="padding:12px 14px;border-radius:10px;background:rgba(251,113,133,.08);border:1px solid rgba(251,113,133,.25);font-size:12.5px;color:var(--txt-2);line-height:1.7;margin-bottom:14px">
+        Se borran <b>las ${nCartas} cartas emitidas</b>, la base, las recopilaciones, las evidencias y las firmas.<br>
+        Los correlativos vuelven a empezar en <b>0001</b>.<br>
+        <b style="color:var(--bad)">Se pierde el historial completo y no hay forma de recuperarlo.</b></div>
+      <div style="display:flex;gap:9px;align-items:center;flex-wrap:wrap">
+        <label style="display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--txt-2);cursor:pointer">
+          <input type="checkbox" id="mantOk" onchange="const b=_el('btnReset'); if(b) b.disabled=!this.checked;">
+          Entiendo que esto borra las ${nCartas} cartas y no se puede deshacer</label>
+        <button class="btn no" id="btnReset" disabled onclick="resetSistema()">${svg(ICO.block,14)} Reiniciar datos (empezar de 0)</button>
+      </div></div>`;
+}
 function viewRechazadas(){
   const isSuper=STATE.role.id==='super';
   const mias=CARTAS.filter(c=>c.estado==='rechazada'&&(isSuper||(c.gestor||'').trim()===(STATE.role.user||'').trim()))
