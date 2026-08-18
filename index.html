@@ -446,9 +446,16 @@ body{
 
 .tbl-wrap{border-radius:var(--r);overflow:hidden;padding:6px}
 table{width:100%;border-collapse:collapse}
-thead th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.7px;color:var(--txt-3);
-  font-weight:600;padding:13px 14px;border-bottom:1px solid var(--stroke)}
-tbody td{padding:13px 14px;font-size:13px;border-bottom:1px solid rgba(255,255,255,.045);vertical-align:middle}
+/* Escala de texto de tablas · el usuario la ajusta con el botón Aa */
+body{--escala-tbl:1}
+thead th{font-size:calc(11.5px * var(--escala-tbl))}
+tbody td{font-size:calc(14px * var(--escala-tbl))}
+.rep-nm{font-size:calc(14.5px * var(--escala-tbl))}
+.rep-cod{font-size:calc(12.5px * var(--escala-tbl))}
+.pd-chip,.st{font-size:calc(12px * var(--escala-tbl))}
+thead th{text-align:left;font-size:11.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--txt-3);
+  font-weight:700;padding:14px 15px;border-bottom:1px solid var(--stroke)}
+tbody td{padding:15px 15px;font-size:14px;line-height:1.45;border-bottom:1px solid rgba(255,255,255,.045);vertical-align:middle}
 tbody tr{transition:.15s}
 tbody tr:hover{background:rgba(255,255,255,.025)}
 tbody tr:last-child td{border-bottom:none}
@@ -461,10 +468,10 @@ tbody tr.blocked{opacity:.62}
 .chk.dis{opacity:.3;cursor:not-allowed}
 .flag{display:inline-flex;align-items:center;gap:7px;font-weight:500}
 .flag .fc{font-family:'JetBrains Mono';font-size:11px;padding:1px 6px;border-radius:5px;background:rgba(255,255,255,.06);color:var(--txt-2)}
-.rep-nm{font-weight:600}.rep-cod{font-family:'JetBrains Mono';font-size:11.5px;color:var(--txt-3);margin-top:1px}
+.rep-nm{font-weight:600;font-size:14.5px;letter-spacing:.1px}.rep-cod{font-family:'JetBrains Mono';font-size:12.5px;color:var(--txt-3);margin-top:3px}
 .money{font-family:'JetBrains Mono';font-weight:500;font-feature-settings:"tnum"}
 .money.pos{color:var(--txt)}.money.zero{color:var(--txt-3)}.money.neg{color:var(--bad)}
-.pd-chip{font-family:'JetBrains Mono';font-size:11px;font-weight:600;padding:2px 9px;border-radius:7px;display:inline-block}
+.pd-chip{font-family:'JetBrains Mono';font-size:12px;font-weight:700;padding:3px 10px;border-radius:7px;display:inline-block}
 .pd-A{background:rgba(52,211,153,.14);color:var(--ok);border:1px solid rgba(52,211,153,.22)}
 .pd-C{background:rgba(251,191,36,.14);color:var(--warn);border:1px solid rgba(251,191,36,.22)}
 .pd-7{background:rgba(251,113,133,.16);color:var(--bad);border:1px solid rgba(251,113,133,.26)}
@@ -480,7 +487,7 @@ tbody tr.blocked{opacity:.62}
 .batchbar{margin-top:14px;padding:14px 20px;border-radius:var(--r);display:flex;align-items:center;gap:16px}
 .batchbar .summary{font-size:13.5px}
 .batchbar .summary b{font-family:'Space Grotesk';font-weight:700;font-size:16px}
-.pill{font-family:'JetBrains Mono';font-size:11.5px;padding:3px 10px;border-radius:20px;display:inline-flex;align-items:center;gap:6px}
+.pill{font-family:'JetBrains Mono';font-size:12.5px;padding:4px 11px;border-radius:20px;display:inline-flex;align-items:center;gap:6px}
 .pill.ok{background:rgba(52,211,153,.12);color:var(--ok);border:1px solid rgba(52,211,153,.22)}
 .pill.no{background:rgba(251,113,133,.12);color:var(--bad);border:1px solid rgba(251,113,133,.22)}
 .pill.warn{background:rgba(251,191,36,.12);color:var(--warn);border:1px solid rgba(251,191,36,.22)}
@@ -494,7 +501,7 @@ tbody tr.blocked{opacity:.62}
 .auth-card .num{font-family:'JetBrains Mono';font-size:11px;color:var(--txt-3)}
 .auth-card h4{font-family:'Space Grotesk';font-weight:600;font-size:15px;margin-bottom:3px}
 .auth-card .meta-row{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}
-.mtag{font-size:11px;color:var(--txt-2);background:rgba(255,255,255,.04);padding:4px 9px;border-radius:7px;border:1px solid var(--stroke);font-family:'JetBrains Mono'}
+.mtag{font-size:12px;color:var(--txt-2);background:rgba(255,255,255,.04);padding:5px 10px;border-radius:7px;border:1px solid var(--stroke);font-family:'JetBrains Mono'}
 .auth-actions{display:flex;gap:9px;margin-top:6px}
 .btn.sm{padding:8px 14px;font-size:12.5px;flex:1;justify-content:center}
 .btn.ok{background:rgba(52,211,153,.14);border-color:rgba(52,211,153,.3);color:var(--ok)}
@@ -506,7 +513,7 @@ tbody tr.blocked{opacity:.62}
 .empty h3{font-family:'Space Grotesk';font-weight:600;font-size:17px;color:var(--txt-2);margin-bottom:6px}
 
 /* status pills history */
-.st{font-size:11px;font-weight:600;padding:3px 10px;border-radius:20px;display:inline-flex;align-items:center;gap:6px}
+.st{font-size:12px;font-weight:600;padding:4px 11px;border-radius:20px;display:inline-flex;align-items:center;gap:6px}
 .st i{width:6px;height:6px;border-radius:50%}
 .st.gen{background:rgba(56,189,248,.12);color:var(--sky)} .st.gen i{background:var(--sky)}
 .st.sent{background:rgba(52,211,153,.12);color:var(--ok)} .st.sent i{background:var(--ok)}
@@ -3255,11 +3262,11 @@ function viewRechazadas(){
         <tbody>${mias.map(c=>{
           const rep=repDeCarta(c.cod,c.num)||{};
           return `<tr>
-            <td style="font-family:var(--mono);font-size:11.5px;color:var(--txt-3)">${c.num||'—'}</td>
+            <td style="font-family:var(--mono);font-size:13px;color:var(--txt-2)">${c.num||'—'}</td>
             <td><b>${rep.nombre||c.cod}</b><div style="font-size:11px;color:var(--txt-3)">${c.cod}${rep.zona?` · Zona ${rep.zona}`:''}</div></td>
             <td>${(PAISES[c.pais]&&PAISES[c.pais].nombre)||c.pais||'—'}</td>
             <td>${({cobro:'Cobro',finiquito:'Finiquito',aldia:'Al día',saldo:'Saldo pendiente'})[c.tipo]||c.tipo||'—'}</td>
-            <td style="font-size:12px">${c.fecha||'—'}</td>
+            <td style="font-size:13.5px">${c.fecha||'—'}</td>
             <td style="font-size:12px;color:var(--txt-2)">${(()=>{
               if(c.motivo&&String(c.motivo).trim()) return c.motivo;
               // sin motivo escrito: se deduce de los datos de la cuenta
@@ -3279,6 +3286,21 @@ function viewRechazadas(){
       Aquí aparecen las cartas que <b>no fueron autorizadas</b>. No se enviaron a la representante.
       Si crees que alguna debe emitirse, vuelve a incluir esa cuenta en tu recopilación.
     </div>${cuerpo}`;
+}
+/* Tamaño del texto de las tablas · se recuerda por navegador */
+const ESCALAS=[{v:1,t:'Normal'},{v:1.12,t:'Grande'},{v:1.25,t:'Muy grande'}];
+function escalaActual(){ try{ const g=parseFloat(localStorage.getItem('cartera_escala')); if(g>0) return g; }catch(e){} return 1; }
+function aplicarEscala(v){
+  try{ localStorage.setItem('cartera_escala',String(v)); }catch(e){}
+  if(document.body&&document.body.style) document.body.style.setProperty('--escala-tbl',String(v));
+}
+function ciclarEscala(){
+  const a=escalaActual();
+  const i=ESCALAS.findIndex(e=>Math.abs(e.v-a)<0.01);
+  const sig=ESCALAS[(i+1)%ESCALAS.length];
+  aplicarEscala(sig.v);
+  toast('ok','Tamaño de texto: '+sig.t);
+  const b=_el('btnEscala'); if(b&&'textContent' in b) b.textContent='Aa '+sig.t;
 }
 function viewHist(){
   const isSuper=STATE.role.id==='super';
@@ -3372,6 +3394,7 @@ function viewHist(){
       </div></div>
     <div style="flex:1"></div>
     <div class="field"><label>&nbsp;</label><button class="btn primary" ${aprobadasDisp?'':'disabled'} onclick="descargarZip()">${svg(ICO.down)} Descargar aprobadas (ZIP)${aprobadasDisp?` · ${aprobadasDisp}`:''}</button></div>
+    <div class="field"><label>&nbsp;</label><button class="btn ghost" id="btnEscala" onclick="ciclarEscala()" title="Cambiar el tamaño del texto de la tabla">Aa ${(ESCALAS.find(e=>Math.abs(e.v-escalaActual())<0.01)||ESCALAS[0]).t}</button></div>
     <div class="field"><label>&nbsp;</label><button class="btn ghost" onclick="abrirOrdenZip()" title="Elige cómo se agrupan las carpetas dentro del ZIP">${svg(ICO.hist)} Organizar carpetas</button></div>
     <div class="field"><label>&nbsp;</label><button class="btn ghost" onclick="exportarHist()">${svg(ICO.down)} Excel</button></div>
   </div>
@@ -3393,7 +3416,7 @@ function viewHist(){
       <td style="font-weight:500">${tipoLabel(rep,c.tipo)}${c.tipo==='cobro'?pdChipHTML(rep):''}</td>
       <td>${rep.nombre.split(' ').slice(0,3).join(' ')} <span class="fc" style="font-family:'JetBrains Mono';font-size:10px;padding:1px 5px;border-radius:4px;background:rgba(255,255,255,.06);margin-left:4px">${rep.pais}</span></td>
       <td><span style="font-family:'JetBrains Mono';font-size:12px;color:var(--txt-3)">${fmtFecha(c.fecha)}</span></td>
-      ${isSuper?`<td><span style="font-size:12px;color:var(--txt-2)">${(c.gestor||'—').split(' ')[0]} ${(c.gestor||'').split(' ')[2]?(c.gestor||'').split(' ')[2][0]+'.':''}</span>${(c.emitidaPor&&c.emitidaPor!==c.gestor)?`<div style="font-size:10px;color:var(--txt-3);margin-top:2px">emitió: ${c.emitidaPor.split(' ')[0]}</div>`:''}</td>`:''}
+      ${isSuper?`<td><span style="font-size:13.5px;color:var(--txt-2)">${(c.gestor||'—').split(' ')[0]} ${(c.gestor||'').split(' ')[2]?(c.gestor||'').split(' ')[2][0]+'.':''}</span>${(c.emitidaPor&&c.emitidaPor!==c.gestor)?`<div style="font-size:11.5px;color:var(--txt-3);margin-top:3px">emitió: ${c.emitidaPor.split(' ')[0]}</div>`:''}</td>`:''}
       <td><span class="st ${e.st}"><i></i>${e.lab}</span> <span class="mtag" style="margin-left:6px;${c.estado==='aprobada'?'color:var(--ok);border-color:rgba(52,211,153,.3)':'color:var(--warn)'}">${c.estado==='aprobada'?'Aprobada':(c.estado==='pendiente'?'Por autorizar':(c.estado||''))}</span>${c.canal?`<span class="mtag" style="margin-left:7px">${CANALES[c.canal]}</span>`:''}</td>
       <td style="text-align:right">${accionEntrega(c,isSuper)}</td>
     </tr>`;}).join(''):`<tr><td colspan="${isSuper?7:6}" style="text-align:center;padding:36px;color:var(--txt-3)">No hay cartas en este rango${(HF.desde||HF.hasta)?' · prueba quitando el filtro de fecha':''}${HF.estado!=='todos'?' · prueba cambiando el filtro de estado':''}</td></tr>`}</tbody>
@@ -4863,6 +4886,7 @@ async function resetSistema(){
 initGate();
 initGateLamp();
 restaurarLoteStamp();
+aplicarEscala(escalaActual());
 renderLogin();
 initSupabase().then(()=>{
   // Los datos sensibles (representantes, recopilaciones, cartas, firmas) YA NO se cargan
