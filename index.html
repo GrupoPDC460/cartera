@@ -3177,7 +3177,7 @@ function repDeCarta(cod,num){
   return (c&&c.snapshot&&c.snapshot.rep)||REPS.find(r=>r.cod===cod)||null;
 }
 function fmtFecha(f){if(!f)return '—';const[y,m,d]=String(f).split('-');return `${d}/${m}/${y}`;}
-let HF={desde:'',hasta:'',gestor:'todos',estado:'todos',entrega:'todas'};
+let HF={desde:'',hasta:'',gestor:'todos',estado:'todos',entrega:'todas',pais:'todos'};
 let HIST_LISTA=[];
 function exportarHist(){
   if(typeof XLSX==='undefined'){toast('info','No se pudo cargar el exportador');return;}
@@ -3286,6 +3286,7 @@ function viewHist(){
   if(HF.desde) lista=lista.filter(c=>c.fecha>=HF.desde);
   if(HF.hasta) lista=lista.filter(c=>c.fecha<=HF.hasta);
   if(isSuper&&HF.gestor!=='todos') lista=lista.filter(c=>c.gestor===HF.gestor);
+  if(HF.pais&&HF.pais!=='todos') lista=lista.filter(c=>c.pais===HF.pais);
   if(HF.estado==='aprobada') lista=lista.filter(c=>c.estado==='aprobada');
   else if(HF.estado==='pendiente') lista=lista.filter(c=>c.estado==='pendiente');
   else if(HF.estado==='rechazada') lista=lista.filter(c=>c.estado==='rechazada');
@@ -3306,6 +3307,7 @@ function viewHist(){
   if(HF.desde) enRango=enRango.filter(c=>String(c.fecha||'')>=HF.desde);
   if(HF.hasta) enRango=enRango.filter(c=>String(c.fecha||'')<=HF.hasta);
   if(isSuper&&HF.gestor&&HF.gestor!=='todos') enRango=enRango.filter(c=>c.gestor===HF.gestor);
+  if(HF.pais&&HF.pais!=='todos') enRango=enRango.filter(c=>c.pais===HF.pais);
   const aprobadasDisp=enRango.filter(c=>c.estado==='aprobada').length;
   const pendientesDisp=enRango.filter(c=>c.estado==='pendiente').length;
   const rechazadasDisp=enRango.filter(c=>c.estado==='rechazada').length;
@@ -3333,7 +3335,8 @@ function viewHist(){
       </select></div>
     <div class="field"><label>Desde</label><input type="date" class="input" style="min-width:150px" value="${HF.desde}" onchange="HF.desde=this.value;viewHist()"></div>
     <div class="field"><label>Hasta</label><input type="date" class="input" style="min-width:150px" value="${HF.hasta}" onchange="HF.hasta=this.value;viewHist()"></div>
-    ${isSuper?`<div class="field"><label>Gestor</label><select class="select" onchange="HF.gestor=this.value;viewHist()"><option value="todos">Todos</option>${GESTORES.map(g=>`<option ${HF.gestor===g.nombre?'selected':''}>${g.nombre.split(' ').slice(0,3).join(' ')}</option>`).join('')}</select></div>`:''}
+    ${isSuper?`<div class="field"><label>Gestor</label><select class="select" onchange="HF.gestor=this.value;viewHist()"><option value="todos">Todos los gestores</option>${GESTORES.map(g=>`<option value="${g.nombre}" ${HF.gestor===g.nombre?'selected':''}>${g.nombre.split(' ').slice(0,3).join(' ')}${(function(){let n=0;enRango.forEach(c=>{if(c.gestor===g.nombre)n++;});return n?' ('+n+')':'';})()}</option>`).join('')}</select></div>`:''}
+    <div class="field"><label>País</label><select class="select" onchange="HF.pais=this.value;viewHist()"><option value="todos">Todos los países</option>${Object.keys(PAISES).map(iso=>{let n=0;enRango.forEach(c=>{if(c.pais===iso)n++;});return n?`<option value="${iso}" ${HF.pais===iso?'selected':''}>${PAISES[iso].nombre} (${n})</option>`:'';}).join('')}</select></div>
     ${(HF.desde||HF.hasta)?`<div class="field"><label>&nbsp;</label><button class="btn ghost" onclick="HF.desde='';HF.hasta='';viewHist()">Quitar filtro de fecha</button></div>`:''}
     <div class="field"><label>&nbsp;</label>
       <div style="padding:9px 14px;border-radius:10px;background:rgba(45,212,191,.10);border:1px solid rgba(45,212,191,.28);white-space:nowrap">
@@ -3707,6 +3710,7 @@ async function descargarZip(){
   if(HF.desde) base=base.filter(c=>String(c.fecha||'')>=HF.desde);
   if(HF.hasta) base=base.filter(c=>String(c.fecha||'')<=HF.hasta);
   if(isSuper&&HF.gestor&&HF.gestor!=='todos') base=base.filter(c=>c.gestor===HF.gestor);
+  if(HF.pais&&HF.pais!=='todos') base=base.filter(c=>c.pais===HF.pais);
   let lista=base.filter(c=>c.estado==='aprobada');
   const rango=(HF.desde||HF.hasta)?` en el rango ${HF.desde||'inicio'} → ${HF.hasta||'hoy'}`:'';
   if(!lista.length){
