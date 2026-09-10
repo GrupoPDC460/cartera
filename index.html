@@ -4712,8 +4712,13 @@ async function dbCargarRepresentantes(){
         gestor:r.gestor||undefined,
         corte:r.fecha_corte||null,prev:[]});
     });
-    // el lote más reciente = la carga del día
-    LOTE.ultimoLote=(data.slice().sort((x,y)=>String(y.fecha_corte||'').localeCompare(String(x.fecha_corte||'')))[0]||{}).lote_carga||null;
+    // el lote más reciente = la carga del día.
+    // Si NO hay lotes de CAM pero SÍ hay cuentas de RD, RD es la carga visible.
+    const hayRD=REPS.some(r=>r.pais==='RD');
+    const ultCAM=(data.slice().sort((x,y)=>String(y.fecha_corte||'').localeCompare(String(x.fecha_corte||'')))[0]||{}).lote_carga||null;
+    if(ultCAM){ LOTE.ultimoLote=ultCAM; }
+    else if(hayRD){ LOTE.ultimoLote=(REPS.find(r=>r.pais==='RD')||{}).lote||null; LOTE.soloHoy=false; }
+    else { LOTE.ultimoLote=null; }
     LOTE.baseOrigen='nube'; LOTE.baseN=REPS.length; LOTE.pdListo=false; LOTE.pdOk=0; LOTE.pdSinMatch=0;
     return true;
   }catch(e){return false;}
