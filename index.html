@@ -4118,7 +4118,7 @@ async function subirExcelRD(input){
       if(pdNum<=3) estatus='A';   // PD1-3 = Recordatorio (estatus A)
       reps.push({cod,pais:'RD',nombre,zona:zona||'—',sector:'—',estatus,
         inact:pdNum,balance:saldo,camp:camp||'—',cedula,
-        tipoSolicitado:'cobro',gestor,prev:[]});
+        tipoSolicitado:'cobro',gestor,lote:'RD-'+fechaHoyLocal(),prev:[]});
     });
     if(!reps.length){
       setAv('<div style="padding:12px;color:var(--bad)">Sin cuentas válidas. '+errs.slice(0,5).join(' | ')+'</div>'); return;
@@ -4144,6 +4144,8 @@ async function subirExcelRD(input){
     const idxRD={}; REPS.forEach(r=>{ if(r.pais==='RD') idxRD[r.cod]=true; });
     reps.forEach(r=>{ if(!idxRD[r.cod]) REPS.push(r); });
     invalidarIdxCartas();
+    LOTE.ultimoLote='RD-'+fechaHoyLocal();  // que RD sea la carga visible en Generar
+    LOTE.soloHoy=true;
     // Recopilación: registrar subida
     const csv='Codigo,Pais,PD,Tipo\n'+reps.map(r=>r.cod+',REPUBLICA DOMINICANA,'+r.inact+',cobro').join('\n');
     await dbSubirRecopilacion(STATE.role.user,csv,reps.length);
@@ -4700,9 +4702,16 @@ async function dbCargarRepresentantes(){
     DEMO_ACTIVO=false;                   // ya hablamos con la BD: nada de demo
     REPS.length=0;                       // conectó bien: la BD es la verdad
     if(!data.length) return true;         // tabla vacía = SIN cuentas (no es demo)
-    data.forEach(r=>REPS.push({cod:r.codigo,pais:r.pais,zona:r.zona||'—',sector:r.sector||'—',nombre:r.nombre||'(sin nombre)',
-      estatus:r.estatus||'A',inact:r.pd||0,balance:parseFloat(r.balance)||0,camp:r.campania||'—',
-      cedula:r.cedula||'—',lote:r.lote_carga||null,corte:r.fecha_corte||null,prev:[]}));
+    data.forEach(r=>{
+      const esRD=(r.pais==='RD');
+      REPS.push({cod:r.codigo,pais:r.pais,zona:r.zona||'—',sector:r.sector||'—',nombre:r.nombre||'(sin nombre)',
+        estatus:r.estatus||'A',inact:r.pd||0,balance:parseFloat(r.balance)||0,camp:r.campania||'—',
+        cedula:r.cedula||'—',
+        tipoSolicitado:esRD?'cobro':undefined,           // RD siempre es carta de cobro
+        lote:esRD?('RD-'+(String(r.fecha_corte||'').slice(0,10)||'x')):(r.lote_carga||null),
+        gestor:r.gestor||undefined,
+        corte:r.fecha_corte||null,prev:[]});
+    });
     // el lote más reciente = la carga del día
     LOTE.ultimoLote=(data.slice().sort((x,y)=>String(y.fecha_corte||'').localeCompare(String(x.fecha_corte||'')))[0]||{}).lote_carga||null;
     LOTE.baseOrigen='nube'; LOTE.baseN=REPS.length; LOTE.pdListo=false; LOTE.pdOk=0; LOTE.pdSinMatch=0;
