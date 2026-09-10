@@ -894,12 +894,26 @@ const VARIANTES = [
   {id:'escalamiento',nombre:'Aviso de Escalamiento',estatus:'C',pdMin:6,pdMax:6,tono:'Fuerte'},
   {id:'prejuridica',nombre:'Notificación Prejurídica',estatus:'C',pdMin:7,pdMax:7,tono:'Máxima presión'},
 ];
-const RECOVERY={id:'recovery',nombre:'Reserva (etapa jurídica)',tono:'Máxima firmeza · cuenta trasladada a legal'};
-function variantePorPD(pd,estatus){
-  if(estatus==='M'||estatus==='R') return RECOVERY;
-  const v=VARIANTES.find(v=>pd>=v.pdMin&&pd<=v.pdMax);
-  return v||VARIANTES[VARIANTES.length-1];
+/* Escala de PD para República Dominicana:
+   PD1-3 → Recordatorio  (igual que CAM)
+   PD4   → Requerimiento (CAM: PD4-5)
+   PD5   → Escalamiento  (CAM: PD6)
+   PD6+  → Prejurídica   (CAM: PD7) */
+const VARIANTES_RD = [
+  {id:'recordatorio',nombre:'Recordatorio de Pago',estatus:'A',pdMin:1,pdMax:3,tono:'Empático'},
+  {id:'requerimiento',nombre:'Requerimiento Formal',estatus:'C',pdMin:4,pdMax:4,tono:'Firme'},
+  {id:'escalamiento',nombre:'Aviso de Escalamiento',estatus:'C',pdMin:5,pdMax:5,tono:'Fuerte'},
+  {id:'prejuridica',nombre:'Notificación Prejurídica',estatus:'C',pdMin:6,pdMax:99,tono:'Máxima presión'},
+];
+function variantePorPD(pd,estatus,pais){
+  const vars=(pais==='RD')?VARIANTES_RD:VARIANTES;
+  const inact=parseInt(pd)||0;
+  if(estatus==='A'||estatus==='M'||estatus==='R')
+    return vars.find(v=>v.estatus==='A'&&inact>=v.pdMin&&inact<=v.pdMax)||null;
+  return vars.find(v=>v.estatus==='C'&&inact>=v.pdMin&&inact<=v.pdMax)||null;
 }
+const RECOVERY={id:'recovery',nombre:'Reserva (etapa jurídica)',tono:'Máxima firmeza · cuenta trasladada a legal'};
+
 
 /* ---------- usuarios reales ---------- */
 const iniciales = n => {const p=n.trim().split(/\s+/);return ((p[0]?.[0]||'')+(p[2]?.[0]||p[1]?.[0]||'')).toUpperCase();};
@@ -2626,7 +2640,7 @@ function viewGen(){
   const rows=visibles.filter(r=>{const _t=tipoDe(r);return _t&&validar(r,_t).ok;}).map(r=>{
     const tEfectivo=tipoDe(r);
     const v=tEfectivo?validar(r,tEfectivo):{ok:false,rsn:'Sin tipo solicitado · márcalo en la recopilación'};
-    const variante=tEfectivo==='cobro'?variantePorPD(r.inact,r.estatus):null;
+    const variante=tEfectivo==='cobro'?variantePorPD(r.inact,r.estatus,r.pais):null;
     const p=PAISES[r.pais];
     const pdClass=r.inact>=7?'pd-7':(r.estatus==='A'?'pd-A':'pd-C');
     const bClass=r.balance>0?'pos':(r.balance===0?'zero':'neg');
@@ -3829,7 +3843,7 @@ async function descargarZip(){
 /* ============ VISOR DE CARTA ============ */
 function showLetter(cod,tipo,num){
   const rep=repDeCarta(cod,num); if(!rep){toast('info','Carta no disponible');return;}
-  const p=PAISES[rep.pais], variante=tipo==='cobro'?variantePorPD(rep.inact,rep.estatus):null;
+  const p=PAISES[rep.pais], variante=tipo==='cobro'?variantePorPD(rep.inact,rep.estatus,rep.pais):null;
   document.getElementById('modal').innerHTML=`
     <div class="modal-h">${svg(ICO.letter,18)}<div><h3>${TIPOS[tipo].nombre}${variante?' · '+variante.nombre:''}</h3></div>
       <div class="x" onclick="closeModal()">${svg(ICO.x,16)}</div></div>
@@ -3976,7 +3990,16 @@ function viewRecop(){
     <span class="st ${done?'sent':'pend'}"><i></i>${done?'Cumplido':'Programado'}</span></div>`;
   document.getElementById('view').innerHTML=`
     <div id="recopAvisos" style="display:none"></div>
-    ${GESTORES_RD.includes(STATE.role.user)?`<div style="margin-bottom:14px;padding:14px 16px;border-radius:12px;background:rgba(96,165,250,.10);border:1.5px solid rgba(96,165,250,.32)"><div style="font-weight:800;font-size:14px;color:var(--accent)">República Dominicana aún no se procesa en esta plataforma</div><div style="font-size:12.5px;color:var(--txt-2);margin-top:6px;line-height:1.6">Tus cuentas de RD se siguen trabajando <b>como siempre, fuera del sistema</b>. Si subes un archivo con cuentas de RD, se van a omitir: no es un error tuyo.<br>Pronto se habilitarán aquí.</div></div>`:''}
+    <div id="recopRdAvisos"></div>
+    ${GESTORES_RD.includes(STATE.role.user)?`
+    <div style="margin-bottom:14px;padding:16px 18px;border-radius:13px;background:rgba(96,165,250,.10);border:1.5px solid rgba(96,165,250,.35)">
+      <div style="font-weight:800;font-size:14px;color:var(--accent);margin-bottom:8px">📋 Carga de República Dominicana</div>
+      <div style="font-size:12.5px;color:var(--txt-2);line-height:1.65;margin-bottom:12px">Sube el Excel de cartera de RD directamente. El sistema leerá las columnas <b>codigo</b>, <b>nombre</b>, <b>zona</b>, <b>pd_actual</b>, <b>saldo_actual</b> y <b>gestor</b>. La aprobación la da el supervisor como siempre.</div>
+      <label style="display:inline-flex;align-items:center;gap:10px;padding:10px 16px;border-radius:10px;background:var(--accent);color:#fff;font-size:13px;font-weight:700;cursor:pointer;border:none">
+        ${svg(ICO.upload,15)} Subir Excel de RD
+        <input type="file" accept=".xlsx,.xls" style="display:none" onchange="subirExcelRD(this)">
+      </label>
+    </div>`:''}
   <div class="grid-2">
     <div class="panel glass">
       <div class="panel-h"><h3>Plantilla de recopilación</h3>
@@ -4040,6 +4063,84 @@ function downloadPlantilla(){
   XLSX.writeFile(wb,'plantilla_recopilacion.xlsx');
   toast('ok','Plantilla descargada · llena la hoja "Datos" · revisa la hoja "Instrucciones"');
 }
+/* ============================================================
+   CARGA DIRECTA DE EXCEL - REPÚBLICA DOMINICANA
+   Jasmin y Angie suben el Excel; el supervisor aprueba.
+   Escala PD: PD1-3 Recordatorio · PD4 Requerimiento ·
+              PD5 Escalamiento · PD6+ Prejurídica
+============================================================ */
+async function subirExcelRD(input){
+  if(!input.files||!input.files[0]) return;
+  const f=input.files[0]; input.value='';
+  const avEl=_el('recopRdAvisos');
+  const setAv=(html)=>{ if(avEl&&typeof avEl.innerHTML!=='undefined') avEl.innerHTML=html; };
+  setAv('<div style="padding:12px;color:var(--txt-3)">Leyendo Excel…</div>');
+  try{
+    const buf=await f.arrayBuffer();
+    const wb=XLSX.read(buf,{type:'array'});
+    // Buscar la hoja de datos (ASIGNACION o la primera que no sea Resumen)
+    const hoja=wb.SheetNames.find(n=>/asignacion/i.test(n))||wb.SheetNames.find(n=>!/resumen/i.test(n))||wb.SheetNames[0];
+    const ws=wb.Sheets[hoja];
+    const filas=XLSX.utils.sheet_to_json(ws,{defval:''});
+    if(!filas.length){ setAv('<div style="color:var(--bad)">El archivo no tiene filas.</div>'); return; }
+    // Mapear columnas (acepta variaciones de nombre)
+    const col=(row,nombres)=>{ for(const n of nombres){ for(const k of Object.keys(row)){ if(k.toLowerCase().replace(/[^a-z]/g,'')===n.replace(/[^a-z]/g,'')) return String(row[k]||'').trim(); }} return ''; };
+    const reps=[]; const errs=[]; const vistos=new Set();
+    filas.forEach((row,i)=>{
+      const cod=normCodigo(col(row,['codigo']));
+      const nombre=col(row,['nombre']);
+      const zona=col(row,['zona']);
+      const pdRaw=col(row,['pdactual','pd_actual','pd']);
+      const pdNum=parseInt(String(pdRaw).replace(/[^0-9]/g,''))||0;
+      const saldo=parseFloat(String(col(row,['saldoactual','saldo_actual','saldolocal'])).replace(/[^0-9.-]/g,''))||0;
+      const gestor=col(row,['gestor'])||STATE.role.user;
+      const cedula=col(row,['cedula','documento','rif'])||'';
+      const camp=col(row,['campaniaadeuda','campania_adeuda','campania','campana'])||'';
+      if(!cod||!/^[0-9]+$/.test(cod)){ errs.push('Fila '+(i+2)+': código inválido ('+col(row,['codigo'])+')'); return; }
+      if(saldo<=0){ errs.push('Fila '+(i+2)+' ('+cod+'): saldo '+(saldo||0)+', se omite'); return; }
+      const k=cod+'|RD';
+      if(vistos.has(k)){ errs.push('Código repetido: '+cod); return; }
+      vistos.add(k);
+      // Calcular variante según escala RD
+      let estatus='C';
+      if(pdNum<=3) estatus='A';   // PD1-3 = Recordatorio (estatus A)
+      reps.push({cod,pais:'RD',nombre,zona:zona||'—',sector:'—',estatus,
+        inact:pdNum,balance:saldo,camp:camp||'—',cedula,
+        tipoSolicitado:'cobro',gestor,prev:[]});
+    });
+    if(!reps.length){
+      setAv('<div style="padding:12px;color:var(--bad)">Sin cuentas válidas. '+errs.slice(0,5).join(' | ')+'</div>'); return;
+    }
+    // Guardar en Supabase (misma tabla cartera_representantes, pais='RD')
+    let nubeOk=false;
+    if(SB_OK&&sb){
+      const filasSB=reps.map(r=>({codigo:r.cod,pais:'RD',zona:r.zona,sector:r.sector,
+        nombre:r.nombre,estatus:r.estatus,pd:r.inact,balance:r.balance,
+        campania:r.camp,cedula:r.cedula,lote_carga:null}));
+      // Upsert por codigo+pais
+      for(let i=0;i<filasSB.length;i+=200){
+        const {error}=await sb.from('cartera_representantes').upsert(filasSB.slice(i,i+200),{onConflict:'codigo,pais'});
+        if(error){ console.warn('RD upsert error',error); break; } else nubeOk=true;
+      }
+    }
+    // Agregar a REPS en memoria (solo si no estaban)
+    const idxRD={}; REPS.forEach(r=>{ if(r.pais==='RD') idxRD[r.cod]=true; });
+    reps.forEach(r=>{ if(!idxRD[r.cod]) REPS.push(r); });
+    invalidarIdxCartas();
+    // Recopilación: registrar como Jasmin/Angie subió
+    const csv='Codigo,Pais,PD,Tipo\n'+reps.map(r=>r.cod+',REPUBLICA DOMINICANA,'+r.inact+',cobro').join('\n');
+    await dbSubirRecopilacion(STATE.role.user,csv,reps.length);
+    STATE.recopSubida=true;
+    const avisoErrs=errs.length?`<div style="margin-top:8px;font-size:12px;color:var(--warn)">`
+      +`⚠ ${errs.length} filas omitidas: ${errs.slice(0,4).join(' · ')}${errs.length>4?' … y '+(errs.length-4)+' más':''}</div>`:'';
+    setAv(`<div style="padding:13px 15px;border-radius:11px;background:rgba(52,211,153,.10);border:1.5px solid rgba(52,211,153,.3);margin-bottom:12px">`
+      +`<b style="color:var(--ok)">✓ ${reps.length} cuentas de RD cargadas${nubeOk?' · guardadas en la nube':' (solo en memoria)'}</b>`
+      +avisoErrs
+      +`<div style="font-size:12px;color:var(--txt-3);margin-top:6px">Ve a <b>Mis cartas</b> para ver las cartas cuando el supervisor las autorice.</div></div>`);
+    buildNav();
+  }catch(e){ setAv('<div style="color:var(--bad)">Error leyendo el Excel: '+(e.message||e)+'</div>'); }
+}
+
 async function subirRecop(e){
   const file=e.target.files[0]; if(!file)return;
   let filas=[];
