@@ -4116,31 +4116,60 @@ async function subirExcelRD(input){
     if(SB_OK&&sb){
       const filasSB=reps.map(r=>({codigo:r.cod,pais:'RD',zona:r.zona,sector:r.sector,
         nombre:r.nombre,estatus:r.estatus,pd:r.inact,balance:r.balance,
-        campania:r.camp,cedula:r.cedula,lote_carga:null}));
-      // Upsert por codigo+pais
-      for(let i=0;i<filasSB.length;i+=200){
-        const {error}=await sb.from('cartera_representantes').upsert(filasSB.slice(i,i+200),{onConflict:'codigo,pais'});
-        if(error){ console.warn('RD upsert error',error); break; } else nubeOk=true;
-      }
+        campania:r.camp,cedula:r.cedula}));
+      // Guardar en nube: delete del lote RD + insert (evita depender de indice unico)
+      try{
+        const {error:eDel}=await sb.from('cartera_representantes').delete().eq('pais','RD');
+        if(eDel) throw eDel;
+        for(let i=0;i<filasSB.length;i+=200){
+          const {error}=await sb.from('cartera_representantes').insert(filasSB.slice(i,i+200));
+          if(error) throw error;
+        }
+        nubeOk=true;
+      }catch(eSB){ console.warn('RD nube error',eSB.message||eSB); nubeOk=false; }
     }
     // Agregar a REPS en memoria (solo si no estaban)
     const idxRD={}; REPS.forEach(r=>{ if(r.pais==='RD') idxRD[r.cod]=true; });
     reps.forEach(r=>{ if(!idxRD[r.cod]) REPS.push(r); });
     invalidarIdxCartas();
-    // Recopilación: registrar como Jasmin/Angie subió
+    // Recopilación: registrar subida
     const csv='Codigo,Pais,PD,Tipo\n'+reps.map(r=>r.cod+',REPUBLICA DOMINICANA,'+r.inact+',cobro').join('\n');
     await dbSubirRecopilacion(STATE.role.user,csv,reps.length);
     STATE.recopSubida=true;
+    STATE.rdSubida={n:reps.length,ok:nubeOk,hora:horaLocal(new Date().toISOString()),arch:f.name};
     const avisoErrs=errs.length?`<div style="margin-top:8px;font-size:12px;color:var(--warn)">`
       +`⚠ ${errs.length} filas omitidas: ${errs.slice(0,4).join(' · ')}${errs.length>4?' … y '+(errs.length-4)+' más':''}</div>`:'';
+    const estadoNube=nubeOk
+      ?`<span style="color:var(--ok)">✓ guardada en la nube</span>`
+      :`<span style="color:var(--warn)">⚠ solo en memoria · el supervisor deberá recargar</span>`;
     setAv(`<div style="padding:13px 15px;border-radius:11px;background:rgba(52,211,153,.10);border:1.5px solid rgba(52,211,153,.3);margin-bottom:12px">`
-      +`<b style="color:var(--ok)">✓ ${reps.length} cuentas de RD cargadas${nubeOk?' · guardadas en la nube':' (solo en memoria)'}</b>`
+      +`<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">`
+      +`<div><b style="color:var(--ok);font-size:13.5px">✓ ${reps.length} cuentas de RD enviadas</b>`
+      +`<div style="font-size:12px;color:var(--txt-3);margin-top:3px">${f.name} · ${horaLocal(new Date().toISOString())} · ${estadoNube}</div></div>`
+      +`<button class="btn no sm" onclick="eliminarSubidaRD()" title="Quitar esta carga y subir otro archivo">✕ Eliminar subida</button></div>`
       +avisoErrs
-      +`<div style="font-size:12px;color:var(--txt-3);margin-top:6px">Ve a <b>Mis cartas</b> para ver las cartas cuando el supervisor las autorice.</div></div>`);
+      +`<div style="font-size:12px;color:var(--txt-2);margin-top:8px">El supervisor verá las cartas en <b>Autorización</b> para firmarlas. Cuando estén firmadas apareceran en tus <b>Mis cartas</b>.</div></div>`);
     buildNav();
   }catch(e){ setAv('<div style="color:var(--bad)">Error leyendo el Excel: '+(e.message||e)+'</div>'); }
 }
 
+async function eliminarSubidaRD(){
+  if(!confirm('¿Eliminar la carga de RD? Las cuentas se quitarán de la base y podrás subir otro archivo.')) return;
+  // Quitar de memoria
+  for(let i=REPS.length-1;i>=0;i--){ if(REPS[i].pais==='RD') REPS.splice(i,1); }
+  invalidarIdxCartas();
+  // Quitar de la nube
+  if(SB_OK&&sb){
+    await sb.from('cartera_representantes').delete().eq('pais','RD');
+    // Borrar recopilacion del dia
+    const hoy=fechaHoyLocal();
+    const {data:u}=await sb.from('cartera_usuarios').select('id').eq('nombre',STATE.role.user).maybeSingle();
+    if(u) await sb.from('cartera_recopilacion').delete().eq('gestor_id',u.id).eq('fecha',hoy);
+  }
+  STATE.rdSubida=null; STATE.recopSubida=false;
+  buildNav(); viewRecop();
+  toast('ok','Carga de RD eliminada · puedes subir otro archivo');
+}
 async function subirRecop(e){
   const file=e.target.files[0]; if(!file)return;
   let filas=[];
