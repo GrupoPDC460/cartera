@@ -906,11 +906,12 @@ const VARIANTES_RD = [
   {id:'prejuridica',nombre:'Notificación Prejurídica',estatus:'C',pdMin:6,pdMax:99,tono:'Máxima presión'},
 ];
 function variantePorPD(pd,estatus,pais){
+  // Reserva siempre devuelve su carta propia (como antes del cambio de RD)
+  if(estatus==='M'||estatus==='R') return RECOVERY;
   const vars=(pais==='RD')?VARIANTES_RD:VARIANTES;
-  const inact=parseInt(pd)||0;
-  if(estatus==='A'||estatus==='M'||estatus==='R')
-    return vars.find(v=>v.estatus==='A'&&inact>=v.pdMin&&inact<=v.pdMax)||null;
-  return vars.find(v=>v.estatus==='C'&&inact>=v.pdMin&&inact<=v.pdMax)||null;
+  const n=parseInt(pd)||0;
+  // Por rango de PD; si queda fuera (PD0, PD8, PD9...) cae en la última, igual que antes.
+  return vars.find(v=>n>=v.pdMin&&n<=v.pdMax)||vars[vars.length-1];
 }
 const RECOVERY={id:'recovery',nombre:'Reserva (etapa jurídica)',tono:'Máxima firmeza · cuenta trasladada a legal'};
 
@@ -1014,7 +1015,7 @@ function validar(rep,tipoId){
   if(t.regla==='pos' && b<=0) return {ok:false,rsn:b===0?'Saldo cero · no aplica cobro':'Saldo negativo'};
   // Tramo/PD y duplicados SOLO aplican a cartas de cobro
   if(tipoId==='cobro'){
-    const v=variantePorPD(rep.inact,rep.estatus);
+    const v=variantePorPD(rep.inact,rep.estatus,rep.pais);
     const dup=rep.prev.some(p=>{
       if(p.tipo!=='cobro'||p.camp!==rep.camp) return false;
       if(v.id==='recovery') return p.estatus==='M'||p.estatus==='R';
@@ -2567,7 +2568,7 @@ function yaGenerada(rep,te){
   if(!te||!rep.prev||!rep.prev.length) return false;
   const mismaCamp=p=>String(p.camp).trim()===String(rep.camp).trim();
   if(te==='cobro'){
-    const v=variantePorPD(rep.inact,rep.estatus);
+    const v=variantePorPD(rep.inact,rep.estatus,rep.pais);
     return rep.prev.some(p=>{
       if(p.tipo!=='cobro'||!mismaCamp(p)) return false;
       if(v.id==='recovery') return p.estatus==='M'||p.estatus==='R';
@@ -2881,9 +2882,9 @@ function letterHTML(rep,tipo,num,fechaCarta){
   const ctx={moneda:p.moneda,monto:rep.balance.toLocaleString('es-GT',{minimumFractionDigits:2,maximumFractionDigits:2}),
     nombre:rep.nombre,cod:rep.cod,zona:rep.zona,sector:(rep.sector||'—'),camp:rep.camp,entidad:p.entidad,ciudad:p.ciudad,
     fecha:fechaLarga(fechaCarta),doc:rep.cedula,tel:'+502 0000-0000',canales:'banco o entidad autorizada',
-    plazo:(tipo==='cobro'&&variantePorPD(rep.inact,rep.estatus).id==='requerimiento')?'5':'3'};
+    plazo:(tipo==='cobro'&&variantePorPD(rep.inact,rep.estatus,rep.pais).id==='requerimiento')?'5':'3'};
   let key,titulo=null,asunto=null,destinatario=true;
-  if(tipo==='cobro'){const v=variantePorPD(rep.inact,rep.estatus);key=v.id;asunto=v.nombre;}
+  if(tipo==='cobro'){const v=variantePorPD(rep.inact,rep.estatus,rep.pais);key=v.id;asunto=v.nombre;}
   else{key=tipo;destinatario=false;titulo={finiquito:'FINIQUITO Y CONSTANCIA DE NO ADEUDO',aldia:'CONSTANCIA DE CUENTA AL DÍA',saldo:'CONSTANCIA DE SALDO PENDIENTE'}[tipo];}
   const parrafos=fillTokens(getPlantilla(key),ctx).split('\n').filter(s=>s.trim()).map(t=>`<p>${t}</p>`).join('');
   // Firmante = quien AUTORIZÓ la carta (queda en su registro, es la firma legal).
@@ -2934,7 +2935,7 @@ function frame(o){
 }
 function preview(cod){
   const rep=REPS.find(r=>r.cod===cod), tipo=tipoEfectivo(rep)||'cobro', p=PAISES[rep.pais];
-  const variante=tipo==='cobro'?variantePorPD(rep.inact,rep.estatus):null;
+  const variante=tipo==='cobro'?variantePorPD(rep.inact,rep.estatus,rep.pais):null;
   document.getElementById('modal').innerHTML=`
     <div class="modal-h">${svg(ICO.letter,18)}<div><h3>Vista previa de carta</h3></div>
       <div class="x" onclick="closeModal()">${svg(ICO.x,16)}</div></div>
@@ -3080,7 +3081,7 @@ function viewAuth(){
     `<div class="empty glass" style="padding:70px">${svg(ICO.shield,46)}<h3>Solo supervisión</h3><p>La autorización está reservada a quienes tienen rango de firma.</p></div>`;return;}
   const pend=CARTAS.filter(c=>c.estado==='pendiente').map(x=>{
     const rep=(x.snapshot&&x.snapshot.rep)||REPS.find(r=>r.cod===x.cod)||{nombre:'(carta de otra base)',balance:0,estatus:'A',inact:1,pais:'GT',cod:x.cod};
-    return Object.assign({},x,{rep,p:PAISES[rep.pais]||PAISES.GT,v:x.tipo==='cobro'?variantePorPD(rep.inact,rep.estatus):{nombre:TIPOS[x.tipo]?TIPOS[x.tipo].nombre:x.tipo}});});
+    return Object.assign({},x,{rep,p:PAISES[rep.pais]||PAISES.GT,v:x.tipo==='cobro'?variantePorPD(rep.inact,rep.estatus,rep.pais):{nombre:TIPOS[x.tipo]?TIPOS[x.tipo].nombre:x.tipo}});});
   const tieneFirma=!!STATE.firmas[STATE.role.user];
   document.getElementById('view').innerHTML=`
   <div class="toolbar">
@@ -3193,7 +3194,7 @@ async function rejectAll(){
 
 /* ============ HISTORIAL ============ */
 function tipoLabel(rep,tipo){
-  if(tipo==='cobro'){const v=variantePorPD(rep.inact,rep.estatus);return 'Cobro · '+v.nombre.split(' ')[0];}
+  if(tipo==='cobro'){const v=variantePorPD(rep.inact,rep.estatus,rep.pais);return 'Cobro · '+v.nombre.split(' ')[0];}
   return TIPOS[tipo].nombre;
 }
 /* chip del tramo de mora (estatus·PD) para mostrar en el historial */
@@ -4793,7 +4794,7 @@ async function dbEmitirCarta(rep,tipo,gestorNombre,emitidaPor){
     if(!p) return {num:'—',db:false,err:`país no reconocido ("${rep.pais==null?'vacío':rep.pais}") · corrige la base`};
     const sufijo=parseInt(String(rep.cod).replace(/\D/g,'').slice(-4),10);
     const ref=`${p.cod}.102.${rep.zona||'000'}.${rep.cod}.${isNaN(sufijo)?'00000':(sufijo%90000+10000)}`;
-    const v=tipo==='cobro'?variantePorPD(rep.inact,rep.estatus):null;
+    const v=tipo==='cobro'?variantePorPD(rep.inact,rep.estatus,rep.pais):null;
     const {error:e2}=await sb.from('cartera_cartas').insert({
       num_correlativo:num,ref_archivo:ref,rep_codigo:rep.cod,pais:rep.pais,tipo:tipo,
       variante:v?v.id:null,fecha_emision:fechaHoyLocal(),
