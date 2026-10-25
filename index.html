@@ -1014,16 +1014,37 @@ function validar(rep,tipoId){
   }
   if(t.regla==='pos' && b<=0) return {ok:false,rsn:b===0?'Saldo cero · no aplica cobro':'Saldo negativo'};
   // Tramo/PD y duplicados SOLO aplican a cartas de cobro
+  let aviso=null;
   if(tipoId==='cobro'){
+    const ch=evaluarPD(rep);
+    if(ch&&ch.bloquea) return {ok:false,rsn:ch.msg};
+    aviso=ch?ch.msg:null;
     const v=variantePorPD(rep.inact,rep.estatus,rep.pais);
-    const dup=rep.prev.some(p=>{
+    const dup=(rep.prev||[]).some(p=>{
       if(p.tipo!=='cobro'||p.camp!==rep.camp) return false;
       if(v.id==='recovery') return p.estatus==='M'||p.estatus==='R';
       return p.pd>=v.pdMin&&p.pd<=v.pdMax;
     });
     if(dup) return {ok:false,rsn:'Duplicada (mismo tramo · misma campaña)'};
   }
-  return {ok:true};
+  return aviso?{ok:true,revisar:aviso}:{ok:true};
+}
+/* Coherencia del PD con el estatus del sistema (guía Avon: A = PD1-3 · C = PD4-7 · M/R = reserva).
+   bloquea:true  -> error seguro: la carta NO se genera (sin PD, o cuenta sin mora).
+   bloquea:false -> choque a revisar: no entra en "Seleccionar válidas", pero se puede
+                    generar marcándola a mano si el supervisor confirma que el PD es correcto. */
+function evaluarPD(rep){
+  const e=String(rep.estatus||'').toUpperCase();
+  if(e==='M'||e==='R') return null;
+  if(rep.pdFaltante===true) return {bloquea:true,msg:'Falta el PD · el gestor no lo indicó en la recopilación'};
+  const n=parseInt(rep.inact,10);
+  if(isNaN(n)) return {bloquea:true,msg:'PD inválido · revisa la recopilación'};
+  if(n<=0) return {bloquea:true,msg:'PD0 = cuenta sin mora · no aplica carta de cobro'};
+  if(rep.pais==='RD') return null;                 // en RD el estatus se deriva del propio PD
+  if(e==='A'&&n>3) return {bloquea:false,msg:`PD${n} con estatus A (A = PD1 a PD3)`};
+  if(e==='C'&&n<4) return {bloquea:false,msg:`PD${n} con estatus C (C = PD4 a PD7)`};
+  if(e==='C'&&n>7) return {bloquea:false,msg:`PD${n} con estatus C (C llega hasta PD7)`};
+  return null;
 }
 
 /* ============ ESTADO ============ */
@@ -1847,12 +1868,16 @@ function viewUpload(){
     <input type="file" id="baseFile" accept=".xlsx,.xls,.csv" style="display:none" onchange="cargarBaseReal(event)">
     <input type="file" id="pdFile" accept=".xlsx,.xls,.csv" style="display:none" onchange="fusionarPD(event)">
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-      <button class="btn primary" onclick="document.getElementById('baseFile').click()">${svg(ICO.upload)} 1 · Elegir base (query)</button>
+      <button class="btn primary" onclick="copiarSQL()">${svg(ICO.bolt)} 1 · Copiar consulta SQL</button>
       <span style="color:var(--txt-3)">›</span>
-      <button class="btn primary" onclick="document.getElementById('pdFile').click()">${svg(ICO.upload)} 2 · Subir consolidado (PD)</button>
-      <span style="color:var(--txt-3)">›</span>
-      <button class="btn ghost" onclick="fusionarDesdeCache()">${svg(ICO.bolt)} 3 · Fusionar con el de hoy</button>
+      <button class="btn primary" onclick="document.getElementById('baseFile').click()">${svg(ICO.upload)} 2 · Subir resultado del query</button>
+      <span style="font-size:12px;color:var(--txt-3)">El consolidado de los gestores se aplica solo.</span>
     </div>
+    <details style="margin-top:10px"><summary style="cursor:pointer;font-size:12px;color:var(--txt-3)">Contingencia · solo si algo falla</summary>
+      <div style="display:flex;gap:9px;flex-wrap:wrap;margin-top:9px">
+        <button class="btn ghost sm" onclick="document.getElementById('pdFile').click()">${svg(ICO.upload,14)} Subir consolidado manual (archivo)</button>
+        <button class="btn ghost sm" onclick="fusionarDesdeCache()">${svg(ICO.bolt,14)} Volver a aplicar el consolidado de la nube</button>
+      </div></details>
     <div id="rdPendienteAlert" style="display:none;margin-bottom:6px"></div>
     <div id="semaforoLote" style="margin-top:14px"></div>
     ${STATE.role.id==='super'?`<div style="margin-top:12px;display:flex;gap:9px;align-items:center;flex-wrap:wrap">
@@ -1875,7 +1900,7 @@ function viewUpload(){
 function renderSemaforo(){
   const el=_el('semaforoLote');
   if(!el||typeof el.innerHTML==='undefined') return;
-  const baseN=REPS.length, hayBase=baseN>0;
+  const baseN=REPS.filter(r=>r.pais!=='RD').length, hayBase=baseN>0;
   const enNube=(LOTE.nubeEstado==='ok');
   const nubeMal=(LOTE.nubeEstado==='error');
   const guardando=(LOTE.nubeEstado==='guardando');
@@ -1892,7 +1917,7 @@ function renderSemaforo(){
   } else if(!hayBase){
     titulo='FALTA EL PASO 1';
     detalle='Todavía no has subido la base del query.';
-    queHacer='Pulsa "1 · Elegir base (query)" y sube el Excel.';
+    queHacer='Pulsa "1 · Copiar consulta SQL", córrela y sube el resultado con "2 · Subir resultado del query".';
     color='var(--accent)'; fondo='rgba(96,165,250,.10)'; borde='rgba(96,165,250,.32)';
   } else if(guardando){
     titulo='ESPERA UN MOMENTO';
@@ -1904,7 +1929,7 @@ function renderSemaforo(){
     detalle='La base quedó solo en esta pantalla, NO se guardó en línea.';
     queHacer='Vuelve a subir la base en el paso 1 antes de generar.';
     color='var(--bad)'; fondo='rgba(251,113,133,.12)'; borde='rgba(251,113,133,.45)';
-  } else if(LOTE.baseOrigen==='nube'&&!LOTE.pdListo){
+  } else if(LOTE.baseOrigen==='nube'&&!LOTE.pdListo&&!LOTE.baseHoy){
     titulo='REVISA LA BASE';
     detalle='Estas '+baseN+' cuentas son de una carga anterior, no del archivo de hoy.';
     queHacer='Sube la base de HOY en el paso 1.';
@@ -1912,8 +1937,18 @@ function renderSemaforo(){
   } else if(!LOTE.pdListo){
     titulo='FALTA EL PASO 2';
     detalle='Base lista: '+baseN+' cuentas guardadas en línea.';
-    queHacer='Ahora sube el consolidado de los gestores.';
+    queHacer='Ningún gestor ha subido hoy, o no se pudo aplicar. Revisa la tabla de recopilación y usa Contingencia → Volver a aplicar el consolidado.';
     color='var(--accent)'; fondo='rgba(96,165,250,.10)'; borde='rgba(96,165,250,.32)';
+  } else if(LOTE.pdNube==='guardando'){
+    titulo='ESPERA UN MOMENTO';
+    detalle='Guardando en línea el PD de los gestores…';
+    queHacer='No cierres la página.';
+    color='var(--accent)'; fondo='rgba(96,165,250,.10)'; borde='rgba(96,165,250,.32)';
+  } else if(LOTE.pdNube==='error'){
+    titulo='NO GENERES TODAVÍA';
+    detalle='El PD de los gestores no se guardó en línea: '+(LOTE.pdNubeMsg||'error');
+    queHacer='Usa Contingencia → Volver a aplicar el consolidado de la nube.';
+    color='var(--bad)'; fondo='rgba(251,113,133,.12)'; borde='rgba(251,113,133,.45)';
   } else if(pdMalo){
     titulo='NO GENERES TODAVÍA';
     detalle='Solo '+LOTE.pdOk+' de '+total+' cuentas del consolidado están en la base.';
@@ -2083,15 +2118,16 @@ function paisCanonSQL(txt){
   return (iso&&M[iso])?M[iso]:String(txt||'').trim().toUpperCase();
 }
 function copiarSQL(){
-  let pares=consolidadoPares();
+  let pares=consolidadoPares().filter(([c,p])=>paisAIso(p)!=='RD');   // RD no está en REP_BI: tiene su propio flujo
   if(!pares.length){toast('info','No hay códigos en el consolidado de hoy');return;}
   // Solo las cuentas que AÚN no tienen carta autorizada: mantiene la consulta
   // pequeña aunque los gestores acumulen cargas durante el día.
   const total=pares.length;
-  const yaListas=new Set((CARTAS||[]).filter(c=>c.estado==='aprobada').map(c=>normCodigo(c.cod)));
-  const pendientes=pares.filter(([c])=>!yaListas.has(normCodigo(c)));
+  const yaListas=new Set((CARTAS||[]).filter(c=>c.estado==='aprobada').map(c=>claveCuenta(c.cod,c.pais)));
+  const pendientes=pares.filter(([c,p])=>!yaListas.has(claveCuenta(c,paisAIso(p)||p)));
   if(pendientes.length){ pares=pendientes; }
   const omitidas=total-pares.length;
+  guardarClavesSQL(pares.map(([c,p])=>claveCuenta(c,paisAIso(p)||p)));
   const values=pares.map(([c,p])=>`('${String(c).trim()}','${paisCanonSQL(p)}')`).join(', ');
   const sql=`SELECT
     CODIGO_CONSEJERA AS 'CODIGO REP',
@@ -2140,14 +2176,18 @@ function aplicarFusionPares(pares){
     const rep=idx.get(claveCuenta(cod,iso));
     if(!rep){ sinMatch++; cnt.noEnBase++; if(prob.noEnBase.length<12) prob.noEnBase.push(`${cod} · ${iso}`); return; }
     const t=String(pdTxt||'').toUpperCase().trim();
-    if(t==='M'||t==='R'){rep.estatus=t;rep.inact=0;}
+    if(t==='M'||t==='R'){rep.estatus=t;rep.inact=0;rep.pdFaltante=false;}
     else{
       const n=parseInt(t.replace(/[^\d]/g,''),10);
-      if(isNaN(n)){ cnt.pdVacio++; if(prob.pdVacio.length<12) prob.pdVacio.push(`${cod} · ${iso}`); }
-      else if(n<0||n>12){ cnt.pdRaro++; if(prob.pdRaro.length<12) prob.pdRaro.push(`${cod} · PD${n}`); rep.inact=n; }
-      else rep.inact=n;
+      if(isNaN(n)){
+        cnt.pdVacio++; if(prob.pdVacio.length<12) prob.pdVacio.push(`${cod} · ${iso}`);
+        rep.pdFaltante=true;   // sin PD del gestor: NO se usa un PD inventado (queda bloqueada)
+      }else{
+        if(n<0||n>12){ cnt.pdRaro++; if(prob.pdRaro.length<12) prob.pdRaro.push(`${cod} · PD${n}`); }
+        rep.inact=n; rep.pdFaltante=false;
+      }
     }
-    rep.pdFaltante=false;
+    rep.__fusionada=true;
     const tipoNorm=normalizarTipoSolicitado(tipoTxt);
     rep.tipoSolicitado=tipoNorm.id; rep.tipoSolicitadoTexto=tipoNorm.texto;
     if(tipoNorm.id==='no_soportado') tiposNoSoportados++;
@@ -2157,22 +2197,119 @@ function aplicarFusionPares(pares){
 }
 function autoFusionarCache(){
   // Restaura el tipo/PD desde el consolidado guardado, en silencio (al iniciar sesión).
-  const pares=[];
-  (RECOP_CACHE||[]).forEach(r=>{(r.csv||'').split('\n').forEach(l=>{
-    if(/^codigo/i.test(l))return; const p=l.split(',').map(x=>x.trim());
-    if(p[0]&&p[1])pares.push(p);});});
-  if(pares.length) aplicarFusionPares(pares);
-}
-function fusionarDesdeCache(){
-  const pares=[];
-  (RECOP_CACHE||[]).forEach(r=>{(r.csv||'').split('\n').forEach(l=>{
-    if(/^codigo/i.test(l))return; const p=l.split(',').map(x=>x.trim());
-    if(p[0]&&p[1])pares.push(p);});});
-  if(!pares.length){toast('info','No hay recopilaciones hoy');return;}
+  const pares=filasConsolidado();
+  if(!pares.length) return;
   const r=aplicarFusionPares(pares);
-  _el('pdSummary').innerHTML=`<div style="margin-top:14px;padding:12px;border-radius:10px;background:rgba(52,211,153,.06);border:1px solid rgba(52,211,153,.18);font-size:12.5px;color:var(--txt-2)">
-    ${svg(ICO.check,14)} <b style="color:var(--ok)">${r.ok} cuentas con PD asignado</b>${r.sinMatch?` · ${r.sinMatch} sin coincidencia en la base`:''}${r.tiposNoSoportados?` · <span style="color:var(--warn)">${r.tiposNoSoportados} con un tipo de carta aún no soportado</span>`:''}</div>`;
-  toast('ok',`PD fusionado desde el consolidado · ${r.ok} cuentas`);
+  if(LOTE.baseHoy){ LOTE.pdListo=true; LOTE.pdOk=r.ok; LOTE.pdSinMatch=0; LOTE.pdNube='ok'; }
+}
+function fusionarDesdeCache(){ return fusionarConsolidado('nube'); }
+
+/* ===================================================================
+   FUSIÓN DEL CONSOLIDADO · un solo camino para todo
+   'auto'    -> al subir el resultado del query (flujo normal, un solo archivo)
+   'nube'    -> contingencia: volver a aplicar el consolidado guardado
+   'archivo' -> contingencia: consolidado subido a mano
+   Siempre: lee el consolidado FRESCO de la nube (salvo 'archivo'), cruza por
+   CÓDIGO+PAÍS, guarda el PD en la nube SIN tocar el lote, y explica lo que no cruzó.
+=================================================================== */
+async function fusionarConsolidado(origen,paresArchivo){
+  const pintar=h=>{ const el=_el('pdSummary'); if(el&&typeof el.innerHTML!=='undefined') el.innerHTML=h; };
+  const cam=REPS.filter(r=>r.pais!=='RD');
+  if(!cam.length){ if(origen!=='auto') toast('info','Primero sube el resultado del query'); return null; }
+  let pares=paresArchivo;
+  if(!pares){
+    if(SB_OK&&sb){ try{ const fresco=await dbCargarRecopilaciones(); if(fresco){ RECOP_CACHE=fresco; construirDuenos(); } }catch(e){} }
+    pares=filasConsolidado();
+  }
+  pares=(pares||[]).filter(p=>paisAIso(p[1])!=='RD');          // RD tiene su propio flujo (Excel directo)
+  if(!pares.length){
+    LOTE.pdListo=false; renderSemaforo();
+    pintar(`<div style="margin-top:14px;padding:12px 14px;border-radius:10px;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.28);font-size:12.5px;color:var(--txt-2)">${svg(ICO.bell,14)} <b style="color:var(--warn)">Todavía no hay recopilaciones de los gestores hoy.</b> Cuando suban, usa <b>Contingencia → Volver a aplicar el consolidado de la nube</b>.</div>`);
+    return null;
+  }
+  cam.forEach(r=>{ delete r.__fusionada; });
+  const res=aplicarFusionPares(pares);
+  // ¿Por qué no cruzaron? Se compara contra lo que se mandó en la consulta SQL.
+  const enBase=new Set(REPS.map(r=>claveCuenta(r.cod,r.pais)));
+  const yaAprobadas=new Set((CARTAS||[]).filter(c=>c.estado==='aprobada').map(c=>claveCuenta(c.cod,c.pais)));
+  const enSQL=clavesSQL();
+  const despues=[], noDevueltas=[];
+  pares.forEach(p=>{
+    const iso=paisAIso(p[1]); if(!iso) return;
+    const k=claveCuenta(p[0],iso);
+    if(enBase.has(k)||yaAprobadas.has(k)) return;             // cruzó, o ya tenía carta (no iba en la consulta)
+    const txt=normCodigo(p[0])+' · '+iso;
+    if(enSQL&&!enSQL.has(k)) despues.push(txt); else noDevueltas.push(txt);
+  });
+  const visibles=cuentasVisiblesGen().filter(r=>r.pais!=='RD');
+  const sinConsolidado=visibles.filter(r=>!r.__fusionada).length;
+  const fusionadas=cam.filter(r=>r.__fusionada);
+  const sinMora=fusionadas.filter(r=>r.pdFaltante!==true&&!['M','R'].includes(String(r.estatus).toUpperCase())&&(parseInt(r.inact,10)||0)<=0);
+  const revisar=fusionadas.filter(r=>{const e=evaluarPD(r); return e&&!e.bloquea;});
+  const C=res.cnt||{}, Pb=res.prob||{};
+  LOTE.pdListo=true; LOTE.pdOk=res.ok; LOTE.pdOrigen=origen; LOTE.pdRevisar=revisar.length;
+  LOTE.pdSinMatch=despues.length+noDevueltas.length+(C.paisIlegible||0);
+  LOTE.pdNube='guardando'; renderSemaforo();
+  const g=await dbGuardarPD(fusionadas.filter(r=>r.pdFaltante!==true));
+  LOTE.pdNube=g.ok?'ok':'error'; LOTE.pdNubeMsg=g.msg||'';
+  renderSemaforo(); setLoteStamp();
+  const lista=(arr)=>arr&&arr.length?`<div style="font-size:11px;color:var(--txt-3);margin-top:3px;line-height:1.6">${arr.slice(0,12).join(' · ')}${arr.length>12?` … y ${arr.length-12} más`:''}</div>`:'';
+  const linea=(color,txt,arr)=>`<div style="margin-top:9px;color:${color}">${txt}${lista(arr)}</div>`;
+  pintar(`<div style="margin-top:14px;padding:13px 15px;border-radius:11px;background:rgba(52,211,153,.06);border:1px solid rgba(52,211,153,.2);font-size:12.5px;color:var(--txt-2);line-height:1.5">
+    ${svg(ICO.check,14)} <b style="color:var(--ok)">Consolidado aplicado · ${res.ok} cuentas con el PD y el tipo de carta del gestor</b>
+    <div style="margin-top:4px;font-size:12px;color:${g.ok?'var(--ok)':'var(--bad)'}">${g.ok?'✓ PD guardado en línea':'⚠ El PD NO se guardó en línea: '+(g.msg||'error')+' · no generes hasta volver a aplicarlo'}</div>
+    ${despues.length?linea('var(--accent)',`🕑 <b>${despues.length}</b> cuentas llegaron después de copiar la consulta · entran en la próxima ronda`,despues):''}
+    ${noDevueltas.length?linea('var(--warn)',`⚠ <b>${noDevueltas.length}</b> códigos de los gestores que el query no devolvió (no existen en el sistema o quedaron fuera del filtro de saldo) · revisar con el gestor`,noDevueltas):''}
+    ${C.paisIlegible?linea('var(--warn)',`⚠ <b>${C.paisIlegible}</b> con país ilegible en la recopilación`,Pb.paisIlegible):''}
+    ${C.pdVacio?linea('var(--bad)',`⛔ <b>${C.pdVacio}</b> sin PD en la recopilación · quedan bloqueadas hasta que el gestor lo indique`,Pb.pdVacio):''}
+    ${sinMora.length?linea('var(--bad)',`⛔ <b>${sinMora.length}</b> con PD0 (sin mora) · no aplica carta de cobro`,sinMora.map(r=>r.cod+' · '+r.pais)):''}
+    ${revisar.length?linea('var(--warn)',`🔎 <b>${revisar.length}</b> con un PD que no cuadra con el estatus del sistema · quedan para revisar en Generar cartas`,revisar.map(r=>r.cod+' · '+r.estatus+'·PD'+r.inact)):''}
+    ${sinConsolidado?linea('var(--warn)',`⚠ <b>${sinConsolidado}</b> cuentas del query que no están en el consolidado de hoy · quedan sin PD (bloqueadas)`,null):''}
+    ${res.tiposNoSoportados?linea('var(--warn)',`⚠ <b>${res.tiposNoSoportados}</b> piden un tipo de carta que el sistema aún no maneja`,null):''}
+  </div>`);
+  if(g.ok) toast('ok',`Consolidado aplicado · ${res.ok} cuentas con su PD`);
+  else toast('bad','El PD no se guardó en línea · vuelve a aplicarlo antes de generar');
+  try{ buildNav(); }catch(e){}
+  return res;
+}
+/* Guarda en la nube el PD que dio el gestor, SIN tocar el lote ni la fecha de carga.
+   Verifica: la función responde cuántas cuentas quedaron con el PD pedido. */
+async function dbGuardarPD(reps){
+  if(!SB_OK||!sb) return {ok:false,msg:'sin conexión a la base en línea'};
+  const vistos=new Set(), filas=[];
+  (reps||[]).forEach(r=>{ const k=claveCuenta(r.cod,r.pais); if(vistos.has(k)) return; vistos.add(k);
+    filas.push({codigo:String(r.cod),pais:r.pais,pd:parseInt(r.inact,10)||0,estatus:r.estatus||''}); });
+  if(!filas.length) return {ok:true,n:0};
+  let ok=0;
+  for(let i=0;i<filas.length;i+=1000){
+    const {data,error}=await sb.rpc('cartera_actualizar_pd',{p_filas:filas.slice(i,i+1000)});
+    if(error) return {ok:false,n:ok,msg:error.message};
+    ok+=(data||0);
+  }
+  if(ok<filas.length) return {ok:false,n:ok,msg:`solo ${ok} de ${filas.length} cuentas quedaron con su PD en línea`};
+  return {ok:true,n:ok};
+}
+/* Qué cuentas se mandaron en la consulta SQL de hoy (para explicar lo que no cruza) */
+function guardarClavesSQL(claves){
+  LOTE.sqlClaves=new Set(claves); LOTE.sqlFecha=fechaHoyLocal();
+  try{ localStorage.setItem('cartera_sql_claves',JSON.stringify({f:LOTE.sqlFecha,c:claves})); }catch(e){}
+}
+function clavesSQL(){
+  if(LOTE.sqlClaves&&LOTE.sqlFecha===fechaHoyLocal()) return LOTE.sqlClaves;
+  try{ const g=JSON.parse(localStorage.getItem('cartera_sql_claves')||'null');
+    if(g&&g.f===fechaHoyLocal()&&Array.isArray(g.c)){ LOTE.sqlClaves=new Set(g.c); LOTE.sqlFecha=g.f; return LOTE.sqlClaves; } }catch(e){}
+  return null;
+}
+/* Cuentas que se muestran en Generar cartas: la carga de HOY de CAM (último lote) y
+   las cuentas de RD que las gestoras enviaron hoy. "Ver todas" las muestra todas.
+   Lo usan la vista, "Seleccionar válidas" y el contador del menú, para que coincidan. */
+function cuentasVisiblesGen(){
+  const verTodo=(LOTE.soloHoy===false);
+  const lotes=[...new Set(REPS.filter(r=>r.pais!=='RD').map(r=>r.lote).filter(Boolean))];
+  const filtrarLote=!verTodo&&LOTE.ultimoLote&&lotes.length>1;
+  return REPS.filter(r=> r.pais==='RD'
+    ? (verTodo||!!DUENO_CUENTA[claveCuenta(r.cod,'RD')])
+    : (!filtrarLote||r.lote===LOTE.ultimoLote));
 }
 /* --- subir consolidado con PD (y Tipo) desde archivo --- */
 function fusionarPD(ev){
@@ -2192,45 +2329,7 @@ function fusionarPD(ev){
     const iPD=headers.findIndex(h=>h==='PD');
     const iT=headers.findIndex(h=>h==='TIPO');
     const pares=rows.slice(1).map(r=>[String(r[iC]==null?'':r[iC]).trim(),String(r[iP]==null?'':r[iP]).trim(),String(r[iPD]==null?'':r[iPD]).trim(),iT>=0?String(r[iT]==null?'':r[iT]).trim():'']);
-    const res=aplicarFusionPares(pares);
-    LOTE.pdListo=true; LOTE.pdOk=res.ok; LOTE.pdSinMatch=res.sinMatch;
-    if(REPS.length===0){ toast('bad','No hay base cargada · sube primero la base del día (paso 1)'); }
-    else if((res.ok+res.sinMatch)>0 && res.sinMatch/(res.ok+res.sinMatch)>0.7){ toast('info','⚠ Casi nada coincidió · ¿cargaste la base de HOY antes del consolidado?'); }
-    // GUARDA el PD real en la nube. Antes solo vivía en memoria: al recargar
-    // volvía el PD viejo del query y las cuentas ya generadas reaparecían.
-    if(res.ok&&SB_OK&&sb){
-      dbGuardarRepresentantes(REPS).then(r=>{
-        if(r.ok){ LOTE.nubeEstado='ok'; LOTE.enNube=r.enNube; }
-        else { LOTE.nubeEstado='error'; LOTE.nubeMsg=r.msg||''; toast('bad','El PD no se guardó en la nube: '+(r.msg||'')); }
-        renderSemaforo();
-      });
-    }
-    renderSemaforo();
-    const P=res.prob||{paisIlegible:[],noEnBase:[],pdVacio:[],pdRaro:[]};
-    const C=res.cnt||{paisIlegible:0,noEnBase:0,pdVacio:0,pdRaro:0};
-    const bloque=(titulo,total,arr,color)=> total?`<div style="margin-top:8px;color:${color}">
-        ⚠ <b>${total}</b> ${titulo}
-        <div style="font-size:11px;color:var(--txt-3);margin-top:3px;line-height:1.6">${arr.join(' · ')}${total>arr.length?` … y ${total-arr.length} más`:''}</div>
-      </div>`:'';
-    // aviso claro cuando la base es MUCHO menor que el consolidado: casi siempre es base vieja
-    const totalCons=res.ok+res.sinMatch;
-    const avisoBase=(REPS.length>0 && totalCons>0 && REPS.length < totalCons*0.5)
-      ? `<div style="margin-top:10px;padding:10px;border-radius:9px;background:rgba(251,191,36,.10);border:1px solid rgba(251,191,36,.32);color:var(--warn);font-size:12.5px">
-           🔎 <b>La base tiene ${REPS.length} cuentas y el consolidado ${totalCons}.</b>
-           No es un problema de mayúsculas ni de la columna ID: el cruce es por <b>CÓDIGO + PAÍS</b>.
-           Lo más probable es que la base cargada no sea la del query de hoy · vuelve al <b>paso 1</b> y sube el Excel del query.
-         </div>` : '';
-    _el('pdSummary').innerHTML=`
-      <div style="margin-top:14px;padding:12px;border-radius:10px;background:rgba(52,211,153,.06);border:1px solid rgba(52,211,153,.18);font-size:12.5px;color:var(--txt-2)">
-        ${svg(ICO.check,14)} <b style="color:var(--ok)">${res.ok} cuentas actualizadas</b> con su PD real.
-        ${avisoBase}
-        ${bloque('con país ilegible en la recopilación (revisar con el gestor)',C.paisIlegible,P.paisIlegible,'var(--warn)')}
-        ${bloque('que no existen en la base del query',C.noEnBase,P.noEnBase,'var(--warn)')}
-        ${bloque('sin PD en la recopilación (quedan con el PD de la base)',C.pdVacio,P.pdVacio,'var(--warn)')}
-        ${bloque('con PD fuera de rango (0-12) · verificar',C.pdRaro,P.pdRaro,'var(--warn)')}
-        ${res.tiposNoSoportados?`<div style="margin-top:8px;color:var(--warn)">⚠ ${res.tiposNoSoportados} cuentas piden un tipo de carta que el sistema aún no tiene (CASC, Carta Crediticia, etc.)</div>`:''}
-      </div>`;
-    toast('ok',`PD fusionado · ${res.ok} cuentas listas para generar`);
+    fusionarConsolidado('archivo',pares);   // mismo camino que el flujo normal
   setLoteStamp();
   };
   if(file.name.toLowerCase().endsWith('.csv')){
@@ -2259,13 +2358,13 @@ function filasConsolidado(){
   return filas;
 }
 function downloadConsolidado(n){
-  let filas=filasConsolidado();
+  let filas=filasConsolidado().filter(f=>paisAIso(f[1])!=='RD');
   if(!filas.length){toast('info','No hay recopilaciones en el consolidado de hoy');return;}
   // Mismo criterio que la consulta SQL: solo cuentas PENDIENTES (sin carta
   // autorizada). Así el consolidado y el query siempre cuadran al fusionar.
   const total=filas.length;
-  const yaListas=new Set((CARTAS||[]).filter(c=>c.estado==='aprobada').map(c=>normCodigo(c.cod)));
-  const pend=filas.filter(f=>!yaListas.has(normCodigo(f[0])));
+  const yaListas=new Set((CARTAS||[]).filter(c=>c.estado==='aprobada').map(c=>claveCuenta(c.cod,c.pais)));
+  const pend=filas.filter(f=>!yaListas.has(claveCuenta(f[0],paisAIso(f[1])||f[1])));
   if(pend.length) filas=pend;
   const omitidas=total-filas.length;
   // BOM (\ufeff) para que Excel respete las tildes (Panamá, República, etc.)
@@ -2480,11 +2579,13 @@ async function cargarBaseReal(ev){
     }
 
     // La base queda EN MEMORIA de inmediato: puedes trabajar aunque la nube falle
+    const rdPrevias=REPS.filter(r=>r.pais==='RD');      // RD tiene flujo propio: no se borra al subir la base de CAM
     REPS.length=0; parsed.forEach(p=>REPS.push(p));
+    if(!parsed.some(p=>p.pais==='RD')) rdPrevias.forEach(r=>REPS.push(r));
     LOTE.baseOrigen='archivo'; LOTE.baseN=parsed.length; LOTE.pdListo=false; LOTE.pdOk=0; LOTE.pdSinMatch=0;
     LOTE.nubeEstado='guardando'; LOTE.enNube=0; LOTE.nubeMsg='';
     renderSemaforo(); setLoteStamp();
-    toast('ok',`Base cargada · ${parsed.length} cuentas · ya puedes fusionar`);
+    toast('ok',`Base cargada · ${parsed.length} cuentas · aplicando el consolidado de los gestores…`);
 
     const pintar=(nubeHtml)=>{
       _el('baseSummary').innerHTML=`
@@ -2522,6 +2623,8 @@ async function cargarBaseReal(ev){
       toast('bad','No se guardó en la nube · puedes trabajar en esta sesión');
     }
     renderSemaforo();
+    // Un solo archivo: el consolidado de los gestores ya está en la nube y se aplica solo
+    try{ await fusionarConsolidado('auto'); }catch(eF){ console.warn('fusión automática',eF); toast('bad','No se pudo aplicar el consolidado: '+(eF&&eF.message||eF)); }
   }catch(e){
     _el('baseDropTitle').textContent='Sube la base del query SQL (.xlsx o .csv)';
     barraProgreso(100,'Error al leer el archivo','var(--bad)');
@@ -2644,10 +2747,10 @@ function viewGen(){
   construirPrev();
   // Solo la carga del día: si la base trae varios lotes, se muestra el más reciente.
   // Las de cargas anteriores NO se borran, solo dejan de estorbar en esta pantalla.
-  const lotesDistintos=[...new Set(REPS.map(r=>r.lote).filter(Boolean))];
-  const filtrarLote=(LOTE.soloHoy!==false)&&LOTE.ultimoLote&&lotesDistintos.length>1;
-  const delDia=filtrarLote?REPS.filter(r=>r.lote===LOTE.ultimoLote):REPS;
+  const lotesDistintos=[...new Set(REPS.filter(r=>r.pais!=='RD').map(r=>r.lote).filter(Boolean))];
+  const delDia=cuentasVisiblesGen();
   const otrosLotes=REPS.length-delDia.length;
+  const filtrarLote=(LOTE.soloHoy!==false)&&otrosLotes>0;
   const visibles=delDia.filter(r=>!yaGenerada(r,tipoDe(r)));   // oculta las cuentas cuyo tramo ya tiene carta
   const ocultas=delDia.length-visibles.length;
   const rows=visibles.filter(r=>{const _t=tipoDe(r);return _t&&validar(r,_t).ok;}).map(r=>{
@@ -2671,7 +2774,7 @@ function viewGen(){
         ? `<div class="suggest">${variante.nombre}<span class="auto">AUTO</span></div>`
         : (tEfectivo?`<div class="suggest">${TIPOS[tEfectivo].nombre}</div>`:`<span style="color:var(--txt-3);font-size:12px">—</span>`)}</td>
       <td>${v.ok
-        ? `<span class="valid ok">${svg(ICO.check,15)} Lista</span>`
+        ? (v.revisar?`<span class="valid" style="color:var(--warn)">${svg(ICO.bell,15)} Revisar <span class="rsn">· ${v.revisar}</span></span>`:`<span class="valid ok">${svg(ICO.check,15)} Lista</span>`)
         : `<span class="valid no">${svg(ICO.block,15)} Bloqueada <span class="rsn">· ${v.rsn}</span></span>`}</td>
       <td style="text-align:right;white-space:nowrap">${v.ok?`<button class="btn ghost sm" onclick="preview('${r.cod}')" style="padding:6px 12px">Vista previa</button>`:''}
         <button class="btn ghost sm" title="Quitar esta cuenta de la carga" onclick="eliminarCuenta('${r.cod}')" style="padding:6px 9px;color:var(--bad)">${svg(ICO.x,13)}</button></td>
@@ -2693,13 +2796,16 @@ function viewGen(){
     if(v.ok){ porPaisResumen[iso].ok++; const lab=te==='cobro'?'Cobro':(TIPOS[te]?TIPOS[te].nombre:te); porTipoResumen[lab]=(porTipoResumen[lab]||0)+1; }
     else { porPaisResumen[iso].bloq++; const m=v.rsn.split(' · ')[0]; motivos[m]=(motivos[m]||0)+1; }
   });
+  const nRevisar=visibles.filter(r=>{const te=tipoEfectivo(r); if(!te) return false; const vv=validar(r,te); return vv.ok&&vv.revisar;}).length;
+  const bannerRevisar=nRevisar?`<div style="margin-bottom:14px;padding:12px 15px;border-radius:11px;background:rgba(251,191,36,.10);border:1.5px solid rgba(251,191,36,.35);font-size:12.5px;color:var(--txt-2);line-height:1.55">${svg(ICO.bell,14)} <b style="color:var(--warn)">${nRevisar} cuenta${nRevisar===1?'':'s'} para revisar:</b> el PD del gestor no cuadra con el estatus del sistema (A = PD1 a PD3 · C = PD4 a PD7). No entran en <b>Seleccionar válidas</b>; si confirmas que el PD es correcto, márcalas una por una.</div>`:'';
   const resumenCarga=`
   <div id="genFallos" style="display:none;margin-bottom:14px"></div>
+  ${bannerRevisar}
   <div class="panel glass" style="margin-bottom:14px">
     <div class="panel-h"><div><h3>Resumen de esta carga</h3>
       <div style="font-size:12px;color:var(--txt-3);margin-top:3px">${visibles.length} cuentas pendientes · ${validos.length} listas · ${blocked} bloqueadas${ocultas>0?` · <span style="color:var(--teal)">${ocultas} ya generadas (ocultas)</span>`:''}</div>
       ${filtrarLote?`<div style="font-size:12px;color:var(--accent);margin-top:6px">${svg(ICO.check,12)} Mostrando <b>solo la carga de hoy</b> (${delDia.length} cuentas) · ${otrosLotes} de cargas anteriores están ocultas <span style="text-decoration:underline;cursor:pointer;color:var(--txt-3)" onclick="LOTE.soloHoy=false;viewGen()">ver todas</span></div>`
-        :(LOTE.soloHoy===false&&lotesDistintos.length>1?`<div style="font-size:12px;color:var(--warn);margin-top:6px">Mostrando <b>todas las cargas</b> · <span style="text-decoration:underline;cursor:pointer" onclick="LOTE.soloHoy=true;viewGen()">volver a solo la de hoy</span></div>`:'')}</div>
+        :(LOTE.soloHoy===false&&REPS.length>0?`<div style="font-size:12px;color:var(--warn);margin-top:6px">Mostrando <b>todas las cargas</b> · <span style="text-decoration:underline;cursor:pointer" onclick="LOTE.soloHoy=true;viewGen()">volver a solo la de hoy</span></div>`:'')}</div>
       <div style="display:flex;gap:8px">
         <span class="pill ok">${svg(ICO.check,12)} ${validos.length} listas</span>
         ${blocked?`<span class="pill no">${svg(ICO.block,12)} ${blocked} bloqueadas</span>`:''}
@@ -2777,9 +2883,11 @@ function tipoEfectivo(r){
 function selectAll(){
   // Solo las cuentas VISIBLES: antes recorría toda la base y seleccionaba
   // miles de cuentas ya generadas que ni siquiera aparecían en pantalla.
-  REPS.filter(r=>{
+  cuentasVisiblesGen().filter(r=>{
     const te=tipoEfectivo(r);
-    return te && !yaGenerada(r,te) && validar(r,te).ok;
+    if(!te||yaGenerada(r,te)) return false;
+    const v=validar(r,te);
+    return v.ok&&!v.revisar;      // las "para revisar" solo se marcan a mano
   }).forEach(r=>STATE.sel.add(claveCuenta(r.cod,r.pais)));
   viewGen();
 }
@@ -4098,8 +4206,24 @@ async function subirExcelRD(input){
     if(!filas.length){ setAv('<div style="color:var(--bad)">El archivo no tiene filas.</div>'); return; }
     // Mapear columnas (acepta variaciones de nombre)
     const col=(row,nombres)=>{ for(const n of nombres){ for(const k of Object.keys(row)){ if(k.toLowerCase().replace(/[^a-z]/g,'')===n.replace(/[^a-z]/g,'')) return String(row[k]||'').trim(); }} return ''; };
+    // El archivo de cartera trae TODOS los países y TODOS los gestores. Solo se toman
+    // las cuentas de RD asignadas a quien sube (nombre sin tildes ni mayúsculas).
+    const nrmNom=t=>String(t||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/\s+/g,' ').trim();
+    const tienePais=filas.some(r=>col(r,['pais']));
+    const filasRD=tienePais?filas.filter(r=>paisAIso(col(r,['pais']))==='RD'):filas;
+    const tieneGestor=filasRD.some(r=>col(r,['gestor']));
+    const yo=nrmNom(STATE.role.user);
+    const mias=tieneGestor?filasRD.filter(r=>nrmNom(col(r,['gestor']))===yo):filasRD;
+    if(!mias.length){
+      const otros=[...new Set(filasRD.map(r=>col(r,['gestor'])).filter(Boolean))].slice(0,4);
+      setAv(`<div style="padding:12px 14px;border-radius:10px;background:rgba(251,113,133,.08);border:1px solid rgba(251,113,133,.3);color:var(--txt-2);font-size:12.5px">`
+        +`<b style="color:var(--bad)">Este archivo no trae cuentas de RD a tu nombre.</b><div style="margin-top:5px">${filas.length} filas · ${filasRD.length} de RD`
+        +`${otros.length?' · asignadas a: '+otros.join(', '):''}. No se cargó nada.</div></div>`);
+      return;
+    }
+    const resumenArchivo=`${filas.length.toLocaleString('es-GT')} filas en el archivo · ${filasRD.length.toLocaleString('es-GT')} de RD · ${mias.length.toLocaleString('es-GT')} a tu nombre`;
     const reps=[]; const errs=[]; const vistos=new Set();
-    filas.forEach((row,i)=>{
+    mias.forEach((row,i)=>{
       const cod=normCodigo(col(row,['codigo']));
       const nombre=col(row,['nombre']);
       const zona=col(row,['zona']);
@@ -4125,28 +4249,22 @@ async function subirExcelRD(input){
       setAv('<div style="padding:12px;color:var(--bad)">Sin cuentas válidas. '+errs.slice(0,5).join(' | ')+'</div>'); return;
     }
     // Guardar en Supabase (misma tabla cartera_representantes, pais='RD')
-    let nubeOk=false;
+    let nubeOk=false, nubeMsg='';
     if(SB_OK&&sb){
-      const filasSB=reps.map(r=>({codigo:r.cod,pais:'RD',zona:r.zona,sector:r.sector,
-        nombre:r.nombre,estatus:r.estatus,pd:r.inact,balance:r.balance,
-        campania:r.camp,cedula:r.cedula}));
-      // Guardar en nube: delete del lote RD + insert (evita depender de indice unico)
-      try{
-        const {error:eDel}=await sb.from('cartera_representantes').delete().eq('pais','RD');
-        if(eDel) throw eDel;
-        for(let i=0;i<filasSB.length;i+=200){
-          const {error}=await sb.from('cartera_representantes').insert(filasSB.slice(i,i+200));
-          if(error) throw error;
-        }
-        nubeOk=true;
-      }catch(eSB){ console.warn('RD nube error',eSB.message||eSB); nubeOk=false; }
+      // Misma carga atómica que CAM: actualiza por CÓDIGO+PAÍS, agrega las nuevas,
+      // NO borra las cuentas que subió la otra gestora, y deja rastro en el historial de cargas.
+      const prevArch=window.__archivoBase; window.__archivoBase='RD · '+f.name;
+      const g=await dbGuardarRepresentantes(reps);
+      window.__archivoBase=prevArch;
+      nubeOk=!!g.ok; nubeMsg=g.msg||'';
+      if(!g.ok) console.warn('RD nube error',g.msg);
     }
-    // Agregar a REPS en memoria (solo si no estaban)
-    const idxRD={}; REPS.forEach(r=>{ if(r.pais==='RD') idxRD[r.cod]=true; });
-    reps.forEach(r=>{ if(!idxRD[r.cod]) REPS.push(r); });
+    // En memoria: reemplaza las que ya estaban (PD y saldo nuevos) y agrega las nuevas
+    const nuevasRD=new Set(reps.map(r=>claveCuenta(r.cod,'RD')));
+    for(let i=REPS.length-1;i>=0;i--){ if(REPS[i].pais==='RD'&&nuevasRD.has(claveCuenta(REPS[i].cod,'RD'))) REPS.splice(i,1); }
+    reps.forEach(r=>REPS.push(r));
+    STATE.rdCodigos=reps.map(r=>r.cod);
     invalidarIdxCartas();
-    LOTE.ultimoLote='RD-'+fechaHoyLocal();  // que RD sea la carga visible en Generar
-    LOTE.soloHoy=true;
     // Recopilación: registrar subida
     const csv='Codigo,Pais,PD,Tipo\n'+reps.map(r=>r.cod+',REPUBLICA DOMINICANA,'+r.inact+',cobro').join('\n');
     await dbSubirRecopilacion(STATE.role.user,csv,reps.length);
@@ -4156,11 +4274,12 @@ async function subirExcelRD(input){
       +`⚠ ${errs.length} filas omitidas: ${errs.slice(0,4).join(' · ')}${errs.length>4?' … y '+(errs.length-4)+' más':''}</div>`:'';
     const estadoNube=nubeOk
       ?`<span style="color:var(--ok)">✓ guardada en la nube</span>`
-      :`<span style="color:var(--warn)">⚠ solo en memoria · el supervisor deberá recargar</span>`;
+      :`<span style="color:var(--bad)">⚠ NO se guardó en línea${nubeMsg?': '+nubeMsg:''} · vuelve a subir el archivo</span>`;
     setAv(`<div style="padding:13px 15px;border-radius:11px;background:rgba(52,211,153,.10);border:1.5px solid rgba(52,211,153,.3);margin-bottom:12px">`
       +`<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">`
       +`<div><b style="color:var(--ok);font-size:13.5px">✓ ${reps.length} cuentas de RD enviadas</b>`
-      +`<div style="font-size:12px;color:var(--txt-3);margin-top:3px">${f.name} · ${horaLocal(new Date().toISOString())} · ${estadoNube}</div></div>`
+      +`<div style="font-size:12px;color:var(--txt-3);margin-top:3px">${f.name} · ${horaLocal(new Date().toISOString())} · ${estadoNube}</div>`
+      +`<div style="font-size:11.5px;color:var(--txt-3);margin-top:2px">${resumenArchivo}</div></div>`
       +`<button class="btn no sm" onclick="eliminarSubidaRD()" title="Quitar esta carga y subir otro archivo">✕ Eliminar subida</button></div>`
       +avisoErrs
       +`<div style="margin-top:10px;display:flex;gap:9px;flex-wrap:wrap;align-items:center">`
@@ -4192,21 +4311,29 @@ async function enviarConfirmacionRD(){
   buildNav(); toast('ok','Confirmación enviada al supervisor');
 }
 async function eliminarSubidaRD(){
-  if(!confirm('¿Eliminar la carga de RD? Las cuentas se quitarán de la base y podrás subir otro archivo.')) return;
-  // Quitar de memoria
-  for(let i=REPS.length-1;i>=0;i--){ if(REPS[i].pais==='RD') REPS.splice(i,1); }
-  invalidarIdxCartas();
-  // Quitar de la nube
+  if(!confirm('¿Eliminar tu carga de RD de hoy? Tus cuentas se quitarán de la base y podrás subir otro archivo.')) return;
+  // Solo las cuentas de ESTA gestora (su recopilación de hoy), nunca las de la otra
+  let cods=(STATE.rdCodigos||[]).map(c=>normCodigo(c));
+  let uid=null;
   if(SB_OK&&sb){
-    await sb.from('cartera_representantes').delete().eq('pais','RD');
-    // Borrar recopilacion del dia
-    const hoy=fechaHoyLocal();
     const {data:u}=await sb.from('cartera_usuarios').select('id').eq('nombre',STATE.role.user).maybeSingle();
-    if(u) await sb.from('cartera_recopilacion').delete().eq('gestor_id',u.id).eq('fecha',hoy);
+    if(u){ uid=u.id;
+      const {data:rc}=await sb.from('cartera_recopilacion').select('archivo_path').eq('gestor_id',u.id).eq('fecha',fechaHoyLocal()).maybeSingle();
+      String((rc&&rc.archivo_path)||'').split(/\r?\n/).forEach(l=>{ const p=partirLinea(l);
+        if(p[0]&&p[1]&&paisAIso(p[1])==='RD'&&/^\d+$/.test(normCodigo(p[0]))) cods.push(normCodigo(p[0])); });
+    }
   }
-  STATE.rdSubida=null; STATE.recopSubida=false;
+  cods=[...new Set(cods)];
+  const quitar=new Set(cods.map(c=>claveCuenta(c,'RD')));
+  for(let i=REPS.length-1;i>=0;i--){ if(REPS[i].pais==='RD'&&quitar.has(claveCuenta(REPS[i].cod,'RD'))) REPS.splice(i,1); }
+  invalidarIdxCartas();
+  if(SB_OK&&sb){
+    for(let i=0;i<cods.length;i+=200) await sb.from('cartera_representantes').delete().eq('pais','RD').in('codigo',cods.slice(i,i+200));
+    if(uid) await sb.from('cartera_recopilacion').delete().eq('gestor_id',uid).eq('fecha',fechaHoyLocal());
+  }
+  STATE.rdSubida=null; STATE.rdCodigos=[]; STATE.recopSubida=false;
   buildNav(); viewRecop();
-  toast('ok','Carga de RD eliminada · puedes subir otro archivo');
+  toast('ok',`Carga de RD eliminada (${cods.length} cuentas) · puedes subir otro archivo`);
 }
 async function subirRecop(e){
   const file=e.target.files[0]; if(!file)return;
@@ -4709,17 +4836,15 @@ async function dbCargarRepresentantes(){
         estatus:r.estatus||'A',inact:r.pd||0,balance:parseFloat(r.balance)||0,camp:r.campania||'—',
         cedula:r.cedula||'—',
         tipoSolicitado:esRD?'cobro':undefined,           // RD siempre es carta de cobro
-        lote:esRD?('RD-'+(String(r.fecha_corte||'').slice(0,10)||'x')):(r.lote_carga||null),
+        lote:r.lote_carga||null,
         gestor:r.gestor||undefined,
         corte:r.fecha_corte||null,prev:[]});
     });
-    // el lote más reciente = la carga del día.
-    // Si NO hay lotes de CAM pero SÍ hay cuentas de RD, RD es la carga visible.
-    const hayRD=REPS.some(r=>r.pais==='RD');
-    const ultCAM=(data.slice().sort((x,y)=>String(y.fecha_corte||'').localeCompare(String(x.fecha_corte||'')))[0]||{}).lote_carga||null;
-    if(ultCAM){ LOTE.ultimoLote=ultCAM; }
-    else if(hayRD){ LOTE.ultimoLote=(REPS.find(r=>r.pais==='RD')||{}).lote||null; LOTE.soloHoy=false; }
-    else { LOTE.ultimoLote=null; }
+    // el lote más reciente DE CAM = la carga del día (RD se filtra aparte, por su recopilación de hoy)
+    const camData=data.filter(x=>x.pais!=='RD');
+    const masReciente=camData.slice().sort((x,y)=>String(y.fecha_corte||'').localeCompare(String(x.fecha_corte||'')))[0]||{};
+    LOTE.ultimoLote=masReciente.lote_carga||null;
+    LOTE.baseHoy=!!masReciente.fecha_corte&&fechaLocalDe(masReciente.fecha_corte)===fechaHoyLocal();
     LOTE.baseOrigen='nube'; LOTE.baseN=REPS.length; LOTE.pdListo=false; LOTE.pdOk=0; LOTE.pdSinMatch=0;
     return true;
   }catch(e){return false;}
@@ -4998,7 +5123,7 @@ function cartasListasGenerar(){
   construirPrev();
   const auto=STATE.tipo==='auto';
   const tipoDe=r=>auto?(r.tipoSolicitado&&TIPOS[r.tipoSolicitado]?r.tipoSolicitado:null):STATE.tipo;
-  return REPS.filter(r=>{const te=tipoDe(r); return te&&!yaGenerada(r,te)&&validar(r,te).ok;}).length;
+  return cuentasVisiblesGen().filter(r=>{const te=tipoDe(r); return te&&!yaGenerada(r,te)&&validar(r,te).ok;}).length;
 }
 function setLoteStamp(d){
   d=d||new Date();
