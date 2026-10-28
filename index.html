@@ -2117,7 +2117,10 @@ function paisCanonSQL(txt){
   const M={GT:'GUATEMALA',SV:'EL SALVADOR',HD:'HONDURAS',NC:'NICARAGUA',PA:'PANAMA',RD:'REPUBLICA DOMINICANA'};
   return (iso&&M[iso])?M[iso]:String(txt||'').trim().toUpperCase();
 }
-function copiarSQL(){
+async function copiarSQL(){
+  // Siempre con el consolidado FRESCO de la nube. Antes usaba la copia cargada al abrir
+  // la pantalla: si un gestor subía después, sus cuentas quedaban fuera sin aviso.
+  if(SB_OK&&sb){ try{ const f=await dbCargarRecopilaciones(); if(f){ RECOP_CACHE=f; construirDuenos(); } }catch(e){} }
   let pares=consolidadoPares().filter(([c,p])=>paisAIso(p)!=='RD');   // RD no está en REP_BI: tiene su propio flujo
   if(!pares.length){toast('info','No hay códigos en el consolidado de hoy');return;}
   // Solo las cuentas que AÚN no tienen carta autorizada: mantiene la consulta
@@ -2125,7 +2128,9 @@ function copiarSQL(){
   const total=pares.length;
   const yaListas=new Set((CARTAS||[]).filter(c=>c.estado==='aprobada').map(c=>claveCuenta(c.cod,c.pais)));
   const pendientes=pares.filter(([c,p])=>!yaListas.has(claveCuenta(c,paisAIso(p)||p)));
-  if(pendientes.length){ pares=pendientes; }
+  // Si todo ya tiene carta aprobada, se avisa: antes mandaba igual las ya procesadas.
+  if(!pendientes.length){ toast('info',`No hay cuentas pendientes · las ${total} del consolidado de hoy ya tienen carta aprobada`); return; }
+  pares=pendientes;
   const omitidas=total-pares.length;
   guardarClavesSQL(pares.map(([c,p])=>claveCuenta(c,paisAIso(p)||p)));
   const values=pares.map(([c,p])=>`('${String(c).trim()}','${paisCanonSQL(p)}')`).join(', ');
@@ -2357,7 +2362,10 @@ function filasConsolidado(){
   });
   return filas;
 }
-function downloadConsolidado(n){
+async function downloadConsolidado(n){
+  // Siempre con el consolidado FRESCO de la nube. Antes usaba la copia cargada al abrir
+  // la pantalla: si un gestor subía después, sus cuentas quedaban fuera sin aviso.
+  if(SB_OK&&sb){ try{ const f=await dbCargarRecopilaciones(); if(f){ RECOP_CACHE=f; construirDuenos(); } }catch(e){} }
   let filas=filasConsolidado().filter(f=>paisAIso(f[1])!=='RD');
   if(!filas.length){toast('info','No hay recopilaciones en el consolidado de hoy');return;}
   // Mismo criterio que la consulta SQL: solo cuentas PENDIENTES (sin carta
@@ -2365,7 +2373,8 @@ function downloadConsolidado(n){
   const total=filas.length;
   const yaListas=new Set((CARTAS||[]).filter(c=>c.estado==='aprobada').map(c=>claveCuenta(c.cod,c.pais)));
   const pend=filas.filter(f=>!yaListas.has(claveCuenta(f[0],paisAIso(f[1])||f[1])));
-  if(pend.length) filas=pend;
+  if(!pend.length){ toast('info',`No hay cuentas pendientes · las ${total} del consolidado de hoy ya tienen carta aprobada`); return; }
+  filas=pend;
   const omitidas=total-filas.length;
   // BOM (\ufeff) para que Excel respete las tildes (Panamá, República, etc.)
   let csv='\ufeffCodigo,Pais,PD,Tipo\r\n';
