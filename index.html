@@ -1952,7 +1952,7 @@ function renderSemaforo(){
   } else if(pdMalo){
     titulo='NO GENERES TODAVÍA';
     detalle='Solo '+LOTE.pdOk+' de '+total+' cuentas del consolidado están en la base.';
-    queHacer='La base no corresponde al consolidado. Sube la base correcta en el paso 1.';
+    queHacer='Lo más probable: corriste una consulta vieja. Recarga la página (Ctrl+Shift+R), pulsa "1 · Copiar consulta SQL", borra todo en SQL Server, pega la consulta NUEVA y sube ese resultado.';
     color='var(--bad)'; fondo='rgba(251,113,133,.12)'; borde='rgba(251,113,133,.45)';
   } else {
     titulo='TODO EN ORDEN · PUEDES GENERAR';
