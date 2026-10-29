@@ -2238,13 +2238,14 @@ async function fusionarConsolidado(origen,paresArchivo){
   const enBase=new Set(REPS.map(r=>claveCuenta(r.cod,r.pais)));
   const yaAprobadas=new Set((CARTAS||[]).filter(c=>c.estado==='aprobada').map(c=>claveCuenta(c.cod,c.pais)));
   const enSQL=clavesSQL();
-  const despues=[], noDevueltas=[];
+  const despues=[], noDevueltas=[], noDevCods=[];
   pares.forEach(p=>{
     const iso=paisAIso(p[1]); if(!iso) return;
     const k=claveCuenta(p[0],iso);
     if(enBase.has(k)||yaAprobadas.has(k)) return;             // cruzó, o ya tenía carta (no iba en la consulta)
     const txt=normCodigo(p[0])+' · '+iso;
-    if(enSQL&&!enSQL.has(k)) despues.push(txt); else noDevueltas.push(txt);
+    if(enSQL&&!enSQL.has(k)) despues.push(txt);
+    else { const g=(DUENO_CUENTA[k]||'').split(' ')[0]; noDevueltas.push(txt+(g?' ('+g+')':'')); noDevCods.push(normCodigo(p[0])); }
   });
   const visibles=cuentasVisiblesGen().filter(r=>r.pais!=='RD');
   const sinConsolidado=visibles.filter(r=>!r.__fusionada).length;
@@ -2254,6 +2255,7 @@ async function fusionarConsolidado(origen,paresArchivo){
   const C=res.cnt||{}, Pb=res.prob||{};
   LOTE.pdListo=true; LOTE.pdOk=res.ok; LOTE.pdOrigen=origen; LOTE.pdRevisar=revisar.length;
   LOTE.pdSinMatch=despues.length+noDevueltas.length+(C.paisIlegible||0);
+  LOTE.noDevCods=noDevCods;
   LOTE.pdNube='guardando'; renderSemaforo();
   const g=await dbGuardarPD(fusionadas.filter(r=>r.pdFaltante!==true));
   LOTE.pdNube=g.ok?'ok':'error'; LOTE.pdNubeMsg=g.msg||'';
@@ -2264,7 +2266,15 @@ async function fusionarConsolidado(origen,paresArchivo){
     ${svg(ICO.check,14)} <b style="color:var(--ok)">Consolidado aplicado · ${res.ok} cuentas con el PD y el tipo de carta del gestor</b>
     <div style="margin-top:4px;font-size:12px;color:${g.ok?'var(--ok)':'var(--bad)'}">${g.ok?'✓ PD guardado en línea':'⚠ El PD NO se guardó en línea: '+(g.msg||'error')+' · no generes hasta volver a aplicarlo'}</div>
     ${despues.length?linea('var(--accent)',`🕑 <b>${despues.length}</b> cuentas llegaron después de copiar la consulta · entran en la próxima ronda`,despues):''}
-    ${noDevueltas.length?linea('var(--warn)',`⚠ <b>${noDevueltas.length}</b> códigos de los gestores que el query no devolvió (no existen en el sistema o quedaron fuera del filtro de saldo) · revisar con el gestor`,noDevueltas):''}
+    ${noDevueltas.length?`<div style="margin-top:10px;padding:11px 13px;border-radius:10px;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.3)">
+      <div style="color:var(--warn)">⚠ <b>${noDevueltas.length}</b> ${noDevueltas.length===1?'cuenta de los gestores no vino':'cuentas de los gestores no vinieron'} en el resultado del query · no se puede generar su carta</div>
+      ${lista(noDevueltas)}
+      <div style="margin-top:7px;font-size:12px;color:var(--txt-2);line-height:1.6">Puede ser por:<br>
+        • <b>Código mal escrito</b> en la recopilación → pídele al gestor que lo revise.<br>
+        • La cuenta está registrada en <b>otro país</b> en el sistema de Avon.<br>
+        • <b>Saldo menor a −5,000</b> (en moneda local): la consulta la deja fuera. Pasa sobre todo en cartas de Al día o Finiquito.</div>
+      <button class="btn ghost sm" style="margin-top:8px" onclick="copiarSQLVerificacion()">${svg(ICO.bolt,13)} Copiar consulta de verificación</button>
+      <span style="font-size:11.5px;color:var(--txt-3)"> · córrela en SQL Server: muestra país y saldo de ${noDevueltas.length===1?'esa cuenta':'esas cuentas'}</span></div>`:''}
     ${C.paisIlegible?linea('var(--warn)',`⚠ <b>${C.paisIlegible}</b> con país ilegible en la recopilación`,Pb.paisIlegible):''}
     ${C.pdVacio?linea('var(--bad)',`⛔ <b>${C.pdVacio}</b> sin PD en la recopilación · quedan bloqueadas hasta que el gestor lo indique`,Pb.pdVacio):''}
     ${sinMora.length?linea('var(--bad)',`⛔ <b>${sinMora.length}</b> con PD0 (sin mora) · no aplica carta de cobro`,sinMora.map(r=>r.cod+' · '+r.pais)):''}
@@ -2295,6 +2305,15 @@ async function dbGuardarPD(reps){
   return {ok:true,n:ok};
 }
 /* Qué cuentas se mandaron en la consulta SQL de hoy (para explicar lo que no cruza) */
+/* Consulta para ver por qué el query no devolvió ciertas cuentas: sin filtro de país ni de saldo */
+function copiarSQLVerificacion(){
+  const cods=[...new Set(LOTE.noDevCods||[])];
+  if(!cods.length){ toast('info','No hay cuentas para verificar'); return; }
+  const sql=`SELECT CODIGO_CONSEJERA, PAIS, BALANCE, ESTADO_ACTUAL_CONSEJERA, NOMBRE_CONSEJERA\nFROM [RepositorioDB].[dbo].[REP_BI]\nWHERE CODIGO_CONSEJERA IN (${cods.map(c=>`'${c}'`).join(', ')})\nORDER BY CODIGO_CONSEJERA, PAIS;`;
+  const done=()=>toast('ok',`Consulta de verificación copiada · ${cods.length} código${cods.length===1?'':'s'} · si no sale ninguna fila, el código está mal escrito`);
+  if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(sql).then(done).catch(()=>descargarSQLTxt(sql,done)); }
+  else descargarSQLTxt(sql,done);
+}
 function guardarClavesSQL(claves){
   LOTE.sqlClaves=new Set(claves); LOTE.sqlFecha=fechaHoyLocal();
   try{ localStorage.setItem('cartera_sql_claves',JSON.stringify({f:LOTE.sqlFecha,c:claves})); }catch(e){}
