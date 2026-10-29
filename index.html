@@ -2689,15 +2689,100 @@ function yaGenerada(rep,te){
   }
   return rep.prev.some(p=>p.tipo===te&&mismaCamp(p));
 }
-async function dbBorrarRep(cod){
+async function dbBorrarRep(cod,pais){
   if(!SB_OK||!sb) return false;
-  try{ const {error}=await sb.from('cartera_representantes').delete().eq('codigo',cod); return !error; }catch(e){ return false; }
+  try{ let q=sb.from('cartera_representantes').delete().eq('codigo',cod);
+    if(pais) q=q.eq('pais',pais);              // solo la cuenta de ESE país: el mismo código existe en varios
+    const {error}=await q; return !error; }catch(e){ return false; }
 }
-async function eliminarCuenta(cod){
+/* ===== Corrección del supervisor: tipo de carta, PD y gestor de una cuenta =====
+   Evita reprocesar (volver a subir archivos) cuando un dato vino mal en la recopilación.
+   Se guarda en la nube en dos lugares: el PD en la cuenta (sin tocar el lote) y la línea
+   corregida en la recopilación de HOY del gestor elegido, para que se mantenga al recargar.
+   La carta que se emita lleva en su copia quién corrigió y qué había antes. */
+const TIPO_A_TEXTO={cobro:'Cobro',finiquito:'Finiquito',aldia:'Al dia',saldo:'Saldo pendiente'};
+function abrirCorreccion(cod,pais){
+  if(!STATE.role||STATE.role.id!=='super') return;
+  const r=REPS.find(x=>x.cod===cod&&x.pais===pais); if(!r){ toast('info','Cuenta no encontrada'); return; }
+  const tipoAct=(r.tipoSolicitado&&TIPOS[r.tipoSolicitado])?r.tipoSolicitado:'cobro';
+  const est=String(r.estatus||'').toUpperCase();
+  const pdAct=(est==='M'||est==='R')?est:(r.pdFaltante===true?'':String(r.inact||''));
+  const maxPD=pais==='RD'?9:7;
+  const opcPD=['',...Array.from({length:maxPD},(_,i)=>String(i+1)),'M','R'].map(x=>`<option value="${x}" ${x===pdAct?'selected':''}>${x===''?'— elegir —':((x==='M'||x==='R')?x+' · reserva':'PD'+x)}</option>`).join('');
+  const opcTipo=Object.keys(TIPOS).map(k=>`<option value="${k}" ${k===tipoAct?'selected':''}>${TIPOS[k].nombre}</option>`).join('');
+  const dueno=gestorDeCuenta(r);
+  const opcG=GESTORES.map(g=>`<option value="${g.nombre}" ${g.nombre===dueno?'selected':''}>${g.nombre}</option>`).join('');
+  const p=PAISES[pais]||{};
+  const v0=validar(r,tipoAct);
+  document.getElementById('modal').innerHTML=`<div style="max-width:480px">
+    <h3 style="margin-bottom:4px">Corregir datos de la cuenta</h3>
+    <div style="font-size:12.5px;color:var(--txt-3);margin-bottom:6px">${r.nombre||''} · ${cod} · ${p.nombre||pais} · estatus del sistema <b>${r.estatus||'—'}</b> · saldo ${money(p.moneda||'',r.balance)}</div>
+    ${!v0.ok?`<div style="font-size:12px;color:var(--bad);margin-bottom:12px">Ahora: ${v0.rsn}</div>`:(v0.revisar?`<div style="font-size:12px;color:var(--warn);margin-bottom:12px">Ahora: ${v0.revisar}</div>`:'<div style="margin-bottom:12px"></div>')}
+    <div class="field" style="margin-bottom:10px"><label>Tipo de carta</label><select id="corTipo" class="select" style="width:100%">${opcTipo}</select></div>
+    <div class="field" style="margin-bottom:10px"><label>PD (tramo de mora)</label><select id="corPD" class="select" style="width:100%">${opcPD}</select>
+      <div style="font-size:11px;color:var(--txt-3);margin-top:4px">${pais==='RD'?'RD: PD1-3 Recordatorio · PD4 Requerimiento · PD5 Escalamiento · PD6+ Prejurídica':'A = PD1 a PD3 · C = PD4 a PD7 · M/R = reserva'} · obligatorio solo para cartas de cobro</div></div>
+    <div class="field" style="margin-bottom:14px"><label>Gestor (en cuyo perfil queda la carta)</label><select id="corGestor" class="select" style="width:100%">${opcG}</select></div>
+    <div style="display:flex;gap:9px"><button class="btn ghost" style="flex:1" onclick="closeModal()">Cancelar</button>
+      <button class="btn primary" style="flex:1" onclick="guardarCorreccion('${cod}','${pais}')">Guardar corrección</button></div></div>`;
+  document.getElementById('overlay').classList.add('show');
+}
+async function guardarCorreccion(cod,pais){
+  const r=REPS.find(x=>x.cod===cod&&x.pais===pais); if(!r) return;
+  const tipo=_el('corTipo').value||'cobro', pdv=_el('corPD').value||'', gestor=_el('corGestor').value||'';
+  if(tipo==='cobro'&&!pdv){ toast('bad','Para una carta de cobro hay que elegir el PD'); return; }
+  if(!gestor){ toast('bad','Elige el gestor'); return; }
+  const antes={pd:r.inact,estatus:r.estatus,tipo:r.tipoSolicitado||null,gestor:gestorDeCuenta(r)};
+  r.tipoSolicitado=tipo; r.tipoSolicitadoTexto=(TIPO_A_TEXTO[tipo]||tipo).toUpperCase();
+  if(pdv==='M'||pdv==='R'){ r.estatus=pdv; r.inact=0; r.pdFaltante=false; }
+  else if(pdv){ r.inact=parseInt(pdv,10); r.pdFaltante=false; }
+  r.__fusionada=true;
+  r.correccion={por:STATE.role.user,cuando:new Date().toISOString(),antes};
+  closeModal();
+  const fallas=[];
+  if(pdv){ const g=await dbGuardarPD([r]); if(!g.ok) fallas.push('PD: '+(g.msg||'error')); }
+  const g2=await dbCorregirRecopilacion(r,gestor,pdv,tipo); if(!g2.ok) fallas.push('recopilación: '+g2.msg);
+  if(SB_OK&&sb){ try{ const f=await dbCargarRecopilaciones(); if(f){ RECOP_CACHE=f; construirDuenos(); } }catch(e){} }
+  else DUENO_CUENTA[claveCuenta(cod,pais)]=gestor;
+  buildNav(); if(STATE.view==='bloqueo') viewBloqueadas(); else viewGen();
+  if(fallas.length){ toast('bad','Corregida en pantalla, pero NO se guardó en línea: '+fallas.join(' · ')); return; }
+  const v=validar(r,tipo);
+  toast(v.ok?'ok':'info', v.ok?`${cod} corregida · lista para generar${v.revisar?' (revisar: '+v.revisar+')':''}`:`${cod} corregida, pero sigue bloqueada: ${v.rsn}`);
+}
+/* Deja la cuenta en la recopilación de hoy del gestor elegido (y la quita de las de otros gestores) */
+async function dbCorregirRecopilacion(r,gestor,pdv,tipo){
+  if(!SB_OK||!sb) return {ok:false,msg:'sin conexión'};
+  try{
+    const hoy=fechaHoyLocal(), k=claveCuenta(r.cod,r.pais);
+    const paisTxt=(PAISES[r.pais]&&PAISES[r.pais].nombre)||r.pais;
+    const linea=[r.cod,paisTxt,pdv?((pdv==='M'||pdv==='R')?pdv:'PD'+pdv):'',TIPO_A_TEXTO[tipo]||tipo].join(',');
+    const lineasDe=txt=>String(txt||'').split(/\r?\n/).filter(l=>l.trim()&&!/^\s*codigo/i.test(l));
+    const otraCuenta=l=>{ const p=partirLinea(l); return !(p[0]&&claveCuenta(p[0],paisAIso(p[1])||p[1])===k); };
+    const {data:u,error:e1}=await sb.from('cartera_usuarios').select('id').eq('nombre',gestor).maybeSingle();
+    if(e1||!u) return {ok:false,msg:'gestor no encontrado'};
+    const {data:rows,error:e0}=await sb.from('cartera_recopilacion').select('gestor_id,archivo_path,estado,subido_en').eq('fecha',hoy);
+    if(e0) return {ok:false,msg:e0.message};
+    for(const row of (rows||[])){
+      if(row.gestor_id===u.id) continue;
+      const todas=lineasDe(row.archivo_path), quedan=todas.filter(otraCuenta);
+      if(quedan.length===todas.length) continue;
+      const {error}=await sb.from('cartera_recopilacion').update({archivo_path:'Codigo,Pais,PD,Tipo\n'+quedan.join('\n'),n_codigos:quedan.length})
+        .eq('gestor_id',row.gestor_id).eq('fecha',hoy);
+      if(error) return {ok:false,msg:error.message};
+    }
+    const mia=(rows||[]).find(x=>x.gestor_id===u.id);
+    const lineas=lineasDe(mia&&mia.archivo_path).filter(otraCuenta); lineas.push(linea);
+    const {error:e2}=await sb.from('cartera_recopilacion').upsert({gestor_id:u.id,fecha:hoy,n_codigos:lineas.length,
+      archivo_path:'Codigo,Pais,PD,Tipo\n'+lineas.join('\n'),estado:(mia&&mia.estado)||'recibido',
+      subido_en:(mia&&mia.subido_en)||new Date().toISOString()},{onConflict:'gestor_id,fecha'});
+    if(e2) return {ok:false,msg:e2.message};
+    return {ok:true};
+  }catch(e){ return {ok:false,msg:e.message||String(e)}; }
+}
+async function eliminarCuenta(cod,pais){
   const r=pais?REPS.find(x=>x.cod===cod&&x.pais===pais):REPS.find(x=>x.cod===cod); if(!r) return;
   if(!confirm(`Quitar a ${r.nombre} (${cod}) de esta carga?\n\nNo se le generará carta. No afecta las cartas ya emitidas.`)) return;
-  const ok=await dbBorrarRep(cod);
-  const i=REPS.findIndex(x=>x.cod===cod); if(i>=0) REPS.splice(i,1);
+  const ok=await dbBorrarRep(cod,r.pais);
+  const i=REPS.findIndex(x=>x.cod===cod&&x.pais===r.pais); if(i>=0) REPS.splice(i,1);
   STATE.sel.delete(claveCuenta(cod,r.pais)); STATE.sel.delete(cod); buildNav();
   toast(ok?'ok':'info', ok?`${r.nombre.split(' ')[0]} quitada de la carga`:'Quitada en pantalla; revisa la conexión');
   viewGen();
@@ -2722,7 +2807,7 @@ function viewBloqueadas(){
       <td><span class="pd-chip ${pdClass}">${r.estatus}·PD${r.inact||0}</span></td>
       <td>${solicitadoBadge(r)}</td>
       <td><span class="valid no">${svg(ICO.block,14)} ${v.rsn}</span></td>
-      <td style="text-align:right"><button class="btn ghost sm" title="Quitar de la carga" onclick="eliminarCuenta('${r.cod}')" style="color:var(--bad)">${svg(ICO.x,13)} Quitar</button></td>
+      <td style="text-align:right;white-space:nowrap">${STATE.role&&STATE.role.id==='super'?`<button class="btn primary sm" title="Corregir PD, tipo de carta o gestor" onclick="abrirCorreccion('${r.cod}','${r.pais}')">Corregir</button> `:''}<button class="btn ghost sm" title="Quitar de la carga" onclick="eliminarCuenta('${r.cod}','${r.pais}')" style="color:var(--bad)">${svg(ICO.x,13)} Quitar</button></td>
     </tr>`;
   }).join('');
   document.getElementById('view').innerHTML=`
@@ -2785,8 +2870,8 @@ function viewGen(){
       <td>${v.ok
         ? (v.revisar?`<span class="valid" style="color:var(--warn)">${svg(ICO.bell,15)} Revisar <span class="rsn">· ${v.revisar}</span></span>`:`<span class="valid ok">${svg(ICO.check,15)} Lista</span>`)
         : `<span class="valid no">${svg(ICO.block,15)} Bloqueada <span class="rsn">· ${v.rsn}</span></span>`}</td>
-      <td style="text-align:right;white-space:nowrap">${v.ok?`<button class="btn ghost sm" onclick="preview('${r.cod}')" style="padding:6px 12px">Vista previa</button>`:''}
-        <button class="btn ghost sm" title="Quitar esta cuenta de la carga" onclick="eliminarCuenta('${r.cod}')" style="padding:6px 9px;color:var(--bad)">${svg(ICO.x,13)}</button></td>
+      <td style="text-align:right;white-space:nowrap">${STATE.role&&STATE.role.id==='super'?`<button class="btn ghost sm" title="Corregir PD, tipo de carta o gestor" onclick="abrirCorreccion('${r.cod}','${r.pais}')" style="padding:6px 11px">Corregir</button> `:''}${v.ok?`<button class="btn ghost sm" onclick="preview('${r.cod}')" style="padding:6px 12px">Vista previa</button>`:''}
+        <button class="btn ghost sm" title="Quitar esta cuenta de la carga" onclick="eliminarCuenta('${r.cod}','${r.pais}')" style="padding:6px 9px;color:var(--bad)">${svg(ICO.x,13)}</button></td>
     </tr>`;
   }).join('');
 
