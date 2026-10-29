@@ -1824,7 +1824,7 @@ function viewUpload(){
         <div style="font-size:12px;color:var(--txt-3);margin-top:3px">Los ${GESTORES.length} gestores suben su plantilla · las subidas se acumulan por día</div></div>
       <div style="display:flex;gap:9px">
         <button class="btn ghost" ${totalCod?'':'disabled'} onclick="downloadConsolidado(${totalCod})">${svg(ICO.down)} Consolidado (${totalCod})</button>
-        <button class="btn primary" ${totalCod?'':'disabled'} onclick="copiarSQL()">${svg(ICO.bolt)} Copiar consulta SQL</button>
+
       </div>
     </div>
     <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px">
@@ -2126,10 +2126,10 @@ async function copiarSQL(){
   // Solo las cuentas que AÚN no tienen carta autorizada: mantiene la consulta
   // pequeña aunque los gestores acumulen cargas durante el día.
   const total=pares.length;
-  const yaListas=new Set((CARTAS||[]).filter(c=>c.estado==='aprobada').map(c=>claveCuenta(c.cod,c.pais)));
+  const yaListas=await clavesConCartaHoyNube();
   const pendientes=pares.filter(([c,p])=>!yaListas.has(claveCuenta(c,paisAIso(p)||p)));
   // Si todo ya tiene carta aprobada, se avisa: antes mandaba igual las ya procesadas.
-  if(!pendientes.length){ toast('info',`No hay cuentas pendientes · las ${total} del consolidado de hoy ya tienen carta aprobada`); return; }
+  if(!pendientes.length){ toast('info',`No hay cuentas pendientes · las ${total} del consolidado de hoy ya tienen su carta de hoy`); return; }
   pares=pendientes;
   const omitidas=total-pares.length;
   guardarClavesSQL(pares.map(([c,p])=>claveCuenta(c,paisAIso(p)||p)));
@@ -2159,7 +2159,7 @@ WHERE
         WHERE t.CODIGO = REP_BI.CODIGO_CONSEJERA
           AND t.PAIS COLLATE Latin1_General_CI_AI = REP_BI.PAIS COLLATE Latin1_General_CI_AI
     );`;
-  const done=()=>toast('ok',`Consulta SQL copiada · ${pares.length} códigos pendientes${omitidas?` · ${omitidas} ya procesadas se omitieron`:''}`);
+  const done=()=>toast('ok',`Consulta SQL copiada · ${pares.length} códigos pendientes${omitidas?` · ${omitidas} con carta de hoy se omitieron`:''}`);
   if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(sql).then(done).catch(()=>descargarSQLTxt(sql,done));}
   else descargarSQLTxt(sql,done);
 }
@@ -2236,7 +2236,7 @@ async function fusionarConsolidado(origen,paresArchivo){
   const res=aplicarFusionPares(pares);
   // ¿Por qué no cruzaron? Se compara contra lo que se mandó en la consulta SQL.
   const enBase=new Set(REPS.map(r=>claveCuenta(r.cod,r.pais)));
-  const yaAprobadas=new Set((CARTAS||[]).filter(c=>c.estado==='aprobada').map(c=>claveCuenta(c.cod,c.pais)));
+  const yaAprobadas=await clavesConCartaHoyNube();   // las mismas que dejó fuera la consulta SQL (incluye la nube)
   const enSQL=clavesSQL();
   const despues=[], noDevueltas=[], noDevCods=[];
   pares.forEach(p=>{
@@ -2314,6 +2314,28 @@ function copiarSQLVerificacion(){
   if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(sql).then(done).catch(()=>descargarSQLTxt(sql,done)); }
   else descargarSQLTxt(sql,done);
 }
+/* Cuentas que YA tienen carta HOY (generada o aprobada, no rechazada): no van en la consulta.
+   Las cartas de días anteriores NO excluyen: la cuenta pudo subir de tramo (PD6 → PD7) y le toca
+   carta nueva; eso lo decide después la regla de duplicados, que sí tiene tramo y campaña. */
+function clavesConCartaHoy(){
+  const hoy=fechaHoyLocal();
+  return new Set((CARTAS||[]).filter(c=>c.estado!=='rechazada'&&String(c.fecha||'').slice(0,10)===hoy).map(c=>claveCuenta(c.cod,c.pais)));
+}
+/* Igual, pero consultando la nube: incluye lo que generó otro supervisor desde otra computadora */
+async function clavesConCartaHoyNube(){
+  const set=clavesConCartaHoy();
+  if(SB_OK&&sb){ try{
+    const {data,error}=await sb.from('cartera_cartas').select('rep_codigo,pais,estado').eq('fecha_emision',fechaHoyLocal());
+    if(!error) (data||[]).forEach(c=>{ if(c.estado!=='rechazada') set.add(claveCuenta(c.rep_codigo,c.pais)); });
+  }catch(e){} }
+  return set;
+}
+/* Al terminar el flujo (cartas generadas) se borra lo que recordaba la última consulta SQL:
+   la siguiente consulta se arma de cero y ya no incluye las cuentas que acaban de salir. */
+function resetMemoriaSQL(){
+  LOTE.sqlClaves=null; LOTE.sqlFecha=null; LOTE.noDevCods=[];
+  try{ localStorage.removeItem('cartera_sql_claves'); }catch(e){}
+}
 function guardarClavesSQL(claves){
   LOTE.sqlClaves=new Set(claves); LOTE.sqlFecha=fechaHoyLocal();
   try{ localStorage.setItem('cartera_sql_claves',JSON.stringify({f:LOTE.sqlFecha,c:claves})); }catch(e){}
@@ -2390,9 +2412,9 @@ async function downloadConsolidado(n){
   // Mismo criterio que la consulta SQL: solo cuentas PENDIENTES (sin carta
   // autorizada). Así el consolidado y el query siempre cuadran al fusionar.
   const total=filas.length;
-  const yaListas=new Set((CARTAS||[]).filter(c=>c.estado==='aprobada').map(c=>claveCuenta(c.cod,c.pais)));
+  const yaListas=await clavesConCartaHoyNube();
   const pend=filas.filter(f=>!yaListas.has(claveCuenta(f[0],paisAIso(f[1])||f[1])));
-  if(!pend.length){ toast('info',`No hay cuentas pendientes · las ${total} del consolidado de hoy ya tienen carta aprobada`); return; }
+  if(!pend.length){ toast('info',`No hay cuentas pendientes · las ${total} del consolidado de hoy ya tienen su carta de hoy`); return; }
   filas=pend;
   const omitidas=total-filas.length;
   // BOM (\ufeff) para que Excel respete las tildes (Panamá, República, etc.)
@@ -2404,7 +2426,7 @@ async function downloadConsolidado(n){
   const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
   a.download='consolidado_recopilacion.csv';a.click();
-  toast('ok',`Consolidado descargado · ${filas.length} pendientes${omitidas?` · ${omitidas} ya procesadas se omitieron`:''}`);
+  toast('ok',`Consolidado descargado · ${filas.length} pendientes${omitidas?` · ${omitidas} con carta de hoy se omitieron`:''}`);
 }
 /* ============ CARGA REAL DE LA BASE DEL QUERY ============ */
 const PAIS_A_ISO={GUATEMALA:'GT','EL SALVADOR':'SV',HONDURAS:'HD',NICARAGUA:'NC',PANAMA:'PA','PANAMÁ':'PA','REPUBLICA DOMINICANA':'RD','REPÚBLICA DOMINICANA':'RD','DOMINICANA':'RD','RD':'RD'};
@@ -3272,7 +3294,7 @@ async function generarLote(){
     if(ring)ring.style.strokeDashoffset=239-(239*pct/100);
   }
   closeModal(); STATE.sel.clear();
-  if(SB_OK&&emitidas) toast('ok',`${emitidas} cartas emitidas y guardadas · pendientes de autorización`);
+  if(SB_OK&&emitidas){ resetMemoriaSQL(); toast('ok',`${emitidas} cartas emitidas y guardadas · pendientes de autorización · la próxima consulta SQL ya no las incluye`); }
   else if(!SB_OK) toast('info',`${n} cartas simuladas (sin conexión · no se guardaron)`);
   if(errores){
     // las que fallaron quedan seleccionadas para reintentar de una vez
